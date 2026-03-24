@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "node",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": ".",
+    "paths": {
+      "@vendix/types": ["packages/types"],
+      "@vendix/utils": ["packages/utils"],
+      "@vendix/database": ["packages/database"]
+    }
+  },
+  "exclude": ["node_modules", "**/dist"]
+}

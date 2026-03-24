@@ -1,0 +1,279 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+//////////////////////////
+// ENUMS
+//////////////////////////
+
+enum RoleType {
+  SUPER_ADMIN
+  ADMIN
+  SELLER
+  DASHBOARD
+  POS
+}
+
+enum LocationType {
+  STORE
+  WAREHOUSE
+  VEHICLE
+  OTHER
+}
+
+enum MovementType {
+  IN
+  OUT
+  TRANSFER
+  ADJUSTMENT
+}
+
+enum SaleStatus {
+  PENDING
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  CASH
+  TRANSFER
+  CARD
+  OTHER
+}
+
+//////////////////////////
+// CORE MULTITENANT
+//////////////////////////
+
+model Tenant {
+  id        String   @id @default(uuid())
+  name      String
+  plan      String
+  isActive  Boolean  @default(true)
+
+  users      User[]
+  locations  Location[]
+  products   Product[]
+  suppliers  Supplier[]
+  purchases  PurchaseOrder[]
+  auditLogs  AuditLog[]
+  sales      Sale[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model User {
+  id        String   @id @default(uuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+
+  email     String
+  password  String
+  role      RoleType
+
+  isActive  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sales     Sale[]
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+}
+
+//////////////////////////
+// MULTISUCURSAL
+//////////////////////////
+
+model Location {
+  id        String       @id @default(uuid())
+  tenantId  String
+  tenant    Tenant       @relation(fields: [tenantId], references: [id])
+
+  name      String
+  type      LocationType
+
+  inventories Inventory[]
+  sales       Sale[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
+}
+
+//////////////////////////
+// PRODUCTOS
+//////////////////////////
+
+model Product {
+  id          String   @id @default(uuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+
+  name        String
+  sku         String
+  price       Decimal  @db.Decimal(10, 2)
+
+  barcode     String?
+  qrCode      String?
+
+  isActive    Boolean  @default(true)
+
+  inventories Inventory[]
+  saleItems   SaleItem[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+
+  @@unique([tenantId, sku])
+  @@index([tenantId])
+}
+
+//////////////////////////
+// INVENTARIO
+//////////////////////////
+
+model Inventory {
+  id          String   @id @default(uuid())
+  tenantId    String
+
+  productId   String
+  locationId  String
+
+  product     Product  @relation(fields: [productId], references: [id])
+  location    Location @relation(fields: [locationId], references: [id])
+
+  quantity    Int
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([productId, locationId])
+  @@index([tenantId])
+}
+
+model InventoryMovement {
+  id          String        @id @default(uuid())
+  tenantId    String
+
+  productId   String
+  locationId  String?
+
+  // For Transfers:
+  sourceLocationId      String?
+  destinationLocationId String?
+
+  type        MovementType
+  quantity    Int
+
+  reference   String? // venta, compra, ajuste
+
+  createdAt   DateTime @default(now())
+
+  @@index([tenantId, productId])
+}
+
+//////////////////////////
+// VENTAS (POS)
+//////////////////////////
+
+model Sale {
+  id            String       @id @default(uuid())
+  tenantId      String
+  tenant        Tenant       @relation(fields: [tenantId], references: [id])
+
+  locationId    String
+  location      Location     @relation(fields: [locationId], references: [id])
+  
+  userId        String
+  user          User         @relation(fields: [userId], references: [id])
+
+  status        SaleStatus
+  total         Decimal      @db.Decimal(10, 2)
+
+  paymentMethod PaymentMethod
+
+  items         SaleItem[]
+
+  createdAt     DateTime @default(now())
+
+  @@index([tenantId, createdAt])
+}
+
+model SaleItem {
+  id        String   @id @default(uuid())
+
+  saleId    String
+  productId String
+
+  quantity  Int
+  price     Decimal  @db.Decimal(10, 2)
+
+  sale      Sale     @relation(fields: [saleId], references: [id])
+  product   Product  @relation(fields: [productId], references: [id])
+}
+
+//////////////////////////
+// ORDENES DE COMPRA
+//////////////////////////
+
+model Supplier {
+  id        String   @id @default(uuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+
+  name      String
+  email     String?
+
+  purchaseOrders PurchaseOrder[]
+
+  createdAt DateTime @default(now())
+
+  @@index([tenantId])
+}
+
+model PurchaseOrder {
+  id          String   @id @default(uuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+
+  supplierId  String
+  supplier    Supplier @relation(fields: [supplierId], references: [id])
+  
+  status      String
+
+  total       Decimal  @db.Decimal(10, 2)
+
+  createdAt   DateTime @default(now())
+
+  @@index([tenantId])
+}
+
+//////////////////////////
+// AUDITORÍA
+//////////////////////////
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+
+  entity    String
+  entityId  String
+
+  action    String
+  changes   Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([tenantId])
+}
