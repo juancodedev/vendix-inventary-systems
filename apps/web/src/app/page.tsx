@@ -12,10 +12,10 @@ export default function LandingPage() {
                     <a href="#pricing" className="hover:text-indigo-600 transition">Precios</a>
                 </div>
                 <div className="flex space-x-4">
-                    <button className="px-4 py-2 font-medium text-slate-600 hover:text-slate-900 transition">Login</button>
-                    <button className="bg-indigo-600 text-white px-5 py-2 rounded-full font-semibold hover:bg-indigo-700 transition shadow-lg shadow-indigo-100">
+                    <a href="/login" className="px-4 py-2 font-medium text-slate-600 hover:text-slate-900 transition flex items-center">Login</a>
+                    <a href="/signup" className="bg-indigo-600 text-white px-5 py-2 rounded-full font-semibold hover:bg-indigo-700 transition shadow-lg shadow-indigo-100 flex items-center">
                         Probar gratis
-                    </button>
+                    </a>
                 </div>
             </nav>
 
@@ -32,9 +32,9 @@ export default function LandingPage() {
                     La plataforma multitenant más avanzada para gestionar inventarios, ventas multisucursal y operaciones en tiempo real. Diseñada para escalar con tu negocio.
                 </p>
                 <div className="flex flex-col sm:flex-row justify-center items-center space-y-4 sm:space-y-0 sm:space-x-6">
-                    <button className="w-full sm:w-auto bg-indigo-600 text-white px-10 py-4 rounded-xl font-bold text-lg hover:bg-indigo-700 transition shadow-2xl shadow-indigo-200">
+                    <a href="/signup" className="w-full sm:w-auto bg-indigo-600 text-white px-10 py-4 rounded-xl font-bold text-lg hover:bg-indigo-700 transition shadow-2xl shadow-indigo-200 text-center">
                         Empieza ahora
-                    </button>
+                    </a>
                     <button className="w-full sm:w-auto bg-white border border-slate-200 text-slate-700 px-10 py-4 rounded-xl font-bold text-lg hover:bg-slate-50 transition">
                         Ver demo
                     </button>
@@ -121,9 +121,9 @@ export default function LandingPage() {
             {/* CTA Footer */}
             <footer className="bg-indigo-600 py-20 px-8 text-center text-white">
                 <h2 className="text-4xl font-bold mb-8 tracking-tight">¿Listo para transformar tu operación?</h2>
-                <button className="bg-white text-indigo-600 px-10 py-4 rounded-xl font-bold text-lg hover:bg-slate-100 transition shadow-xl">
+                <a href="/signup" className="inline-block bg-white text-indigo-600 px-10 py-4 rounded-xl font-bold text-lg hover:bg-slate-100 transition shadow-xl">
                     Empieza gratis ahora
-                </button>
+                </a>
                 <div className="mt-12 text-indigo-200 text-sm font-medium">
                     © 2026 Vendix Systems. Todos los derechos reservados.
                 </div>

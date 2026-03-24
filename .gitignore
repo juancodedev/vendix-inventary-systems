@@ -1,1 +1,16 @@
 node_modules
+apps/web/.next/cache/webpack/client-development/1.pack.gz
+apps/web/.next/cache/webpack/client-development/1.pack.gz
+apps/web/.next/cache/webpack/client-development/2.pack.gz
+apps/web/.next/cache/webpack/client-development/index.pack.gz
+apps/web/.next/cache/webpack/client-development/index.pack.gz.old
+apps/web/.next/cache/webpack/server-development/0.pack.gz
+apps/web/.next/cache/webpack/server-development/1.pack.gz
+apps/web/.next/cache/webpack/server-development/index.pack.gz
+apps/web/.next/cache/webpack/server-development/index.pack.gz.old
+apps/web/.next/cache/webpack/client-development/1.pack.gz
+apps/web/.next/cache/webpack/client-development/index.pack.gz
+apps/web/.next/cache/webpack/client-development/index.pack.gz.old
+apps/web/.next/cache/webpack/server-development/0.pack.gz
+apps/web/.next/cache/webpack/server-development/index.pack.gz
+apps/web/.next/cache/webpack/server-development/index.pack.gz.old
