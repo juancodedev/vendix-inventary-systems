@@ -15,8 +15,8 @@
         "lucide-react": "^0.344.0",
         "clsx": "^2.1.0",
         "tailwind-merge": "^2.2.1",
-        "@vendix/types": "workspace:*",
-        "@vendix/utils": "workspace:*"
+        "@vendix/types": "file:../../packages/types",
+        "@vendix/utils": "file:../../packages/utils"
     },
     "devDependencies": {
         "typescript": "^5",

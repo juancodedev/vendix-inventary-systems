@@ -13,8 +13,8 @@
         "react": "^18.2.0",
         "react-dom": "^18.2.0",
         "lucide-react": "^0.344.0",
-        "@vendix/types": "workspace:*",
-        "@vendix/utils": "workspace:*"
+        "@vendix/types": "file:../../packages/types",
+        "@vendix/utils": "file:../../packages/utils"
     },
     "devDependencies": {
         "@types/react": "^18.2.66",
