@@ -14,6 +14,10 @@ RUN npm install
 # Copy source
 COPY . .
 
+# Ensure we have all dependencies for the workspace
+RUN npm install
+
 EXPOSE 3000
 
-CMD ["npm", "start", "--workspace=auth-service"]
+WORKDIR /app/services/auth-service
+CMD ["npm", "start"]

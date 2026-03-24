@@ -36,6 +36,8 @@ ENV NEXT_TELEMETRY_DISABLED 1
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
+# Copy root package.json for workspace resolution
+COPY --from=builder /app/package.json ./
 COPY --from=builder /app/apps/web/public ./apps/web/public
 COPY --from=builder /app/apps/web/.next ./apps/web/.next
 COPY --from=builder /app/node_modules ./node_modules
@@ -47,4 +49,6 @@ EXPOSE 3000
 
 ENV PORT 3000
 
-CMD ["npm", "start", "--workspace=web"]
+# Start from the app directory where the local package.json is
+WORKDIR /app/apps/web
+CMD ["npm", "start"]
