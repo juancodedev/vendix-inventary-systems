@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: vendix_user
+      POSTGRES_PASSWORD: vendix_password
+      POSTGRES_DB: vendix_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://vendix_user:vendix_password@db:5432/vendix_db
+    depends_on:
+      - db
+
+  pos:
+    build:
+      context: .
+      dockerfile: apps/pos/Dockerfile
+    ports:
+      - "3001:3001"
+
+  auth-service:
+    build:
+      context: .
+      dockerfile: services/auth-service/Dockerfile
+    ports:
+      - "3002:3000"
+    environment:
+      - DATABASE_URL=postgresql://vendix_user:vendix_password@db:5432/vendix_db
+    depends_on:
+      - db
+
+volumes:
+  postgres_data:
