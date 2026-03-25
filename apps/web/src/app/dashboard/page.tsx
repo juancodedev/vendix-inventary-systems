@@ -1,11 +1,45 @@
-import React from 'react';
+'use client';
+
+import React, { useEffect, useMemo, useState } from 'react';
 import { TrendingUp, Users, ShoppingBag, CreditCard } from 'lucide-react';
 import Link from 'next/link';
-import { formatCurrency, getInventoryMetrics, getLowStockAlerts } from '@/lib/inventory';
+import {
+    fetchInventoryMetrics,
+    fetchLowStockAlerts,
+    formatCurrency,
+    getInventoryMetrics,
+    getLowStockAlerts,
+} from '@/lib/inventory';
+import type { InventoryAlert, InventoryMetrics } from '@vendix/types';
 
 export default function DashboardPage() {
-    const inventoryMetrics = getInventoryMetrics();
-    const lowStockAlerts = getLowStockAlerts().slice(0, 4);
+    const fallbackMetrics = useMemo(() => getInventoryMetrics(), []);
+    const fallbackAlerts = useMemo(() => getLowStockAlerts(), []);
+    const [inventoryMetrics, setInventoryMetrics] = useState<InventoryMetrics>(fallbackMetrics);
+    const [lowStockAlerts, setLowStockAlerts] = useState<InventoryAlert[]>(fallbackAlerts.slice(0, 4));
+
+    useEffect(() => {
+        let isMounted = true;
+
+        const load = async () => {
+            try {
+                const [metrics, alerts] = await Promise.all([fetchInventoryMetrics(), fetchLowStockAlerts()]);
+                if (!isMounted) {
+                    return;
+                }
+                setInventoryMetrics(metrics);
+                setLowStockAlerts(alerts.slice(0, 4));
+            } catch {
+                // Fall back to local demo dataset when service is unavailable.
+            }
+        };
+
+        void load();
+
+        return () => {
+            isMounted = false;
+        };
+    }, []);
 
     return (
         <div className="space-y-8">

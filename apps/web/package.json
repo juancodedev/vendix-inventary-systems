@@ -16,6 +16,7 @@
         "clsx": "^2.1.0",
         "tailwind-merge": "^2.2.1",
         "@vendix/pos-core": "file:../../packages/pos-core",
+        "@vendix/billing-core": "file:../../packages/billing-core",
         "@vendix/types": "file:../../packages/types",
         "@vendix/utils": "file:../../packages/utils"
     },

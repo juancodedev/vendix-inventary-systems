@@ -11,7 +11,8 @@
     "paths": {
       "@vendix/types": ["packages/types"],
       "@vendix/utils": ["packages/utils"],
-      "@vendix/database": ["packages/database"]
+      "@vendix/database": ["packages/database"],
+      "@vendix/billing-core": ["packages/billing-core"]
     }
   },
   "exclude": ["node_modules", "**/dist"]

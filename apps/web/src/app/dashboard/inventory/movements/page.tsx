@@ -1,14 +1,56 @@
 'use client';
 
-import React, { useDeferredValue, useState } from 'react';
+import React, { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
 import MovementForm from '@/components/inventory/MovementForm';
-import { formatDateTime, getInventoryItems, getInventoryMovements, inventoryLocations } from '@/lib/inventory';
+import {
+    deriveInventoryLocations,
+    fetchInventoryItems,
+    fetchInventoryMovements,
+    formatDateTime,
+    getInventoryItems,
+    getInventoryMovements,
+    inventoryLocations,
+} from '@/lib/inventory';
+import type { InventoryListItem, InventoryMovementRecord } from '@vendix/types';
 
 export default function InventoryMovementsPage() {
     const [search, setSearch] = useState('');
     const deferredSearch = useDeferredValue(search);
-    const movements = getInventoryMovements().filter((movement) => {
+    const [movements, setMovements] = useState<InventoryMovementRecord[]>([]);
+    const [products, setProducts] = useState<InventoryListItem[]>([]);
+    const [loadError, setLoadError] = useState('');
+    const [isFallback, setIsFallback] = useState(false);
+
+    const fallbackProducts = useMemo(() => getInventoryItems(), []);
+    const fallbackMovements = useMemo(() => getInventoryMovements(), []);
+    const locations = useMemo(
+        () => (isFallback ? inventoryLocations : deriveInventoryLocations(products)),
+        [isFallback, products],
+    );
+
+    const loadData = useCallback(async () => {
+        setLoadError('');
+        try {
+            const [movementsResponse, productsResponse] = await Promise.all([
+                fetchInventoryMovements({ page: 1, pageSize: 50, search: deferredSearch || undefined }),
+                fetchInventoryItems({ page: 1, pageSize: 100 }),
+            ]);
+
+            setMovements(movementsResponse.data);
+            setProducts(productsResponse.data);
+            setIsFallback(false);
+        } catch (error) {
+            setIsFallback(true);
+            setLoadError(error instanceof Error ? error.message : 'No fue posible cargar movimientos en tiempo real.');
+        }
+    }, [deferredSearch]);
+
+    useEffect(() => {
+        void loadData();
+    }, [loadData]);
+
+    const visibleMovements = isFallback ? fallbackMovements.filter((movement) => {
         const normalizedSearch = deferredSearch.trim().toLowerCase();
         if (!normalizedSearch) {
             return true;
@@ -17,7 +59,7 @@ export default function InventoryMovementsPage() {
         return [movement.productName, movement.sku, movement.reference, movement.locationName]
             .filter(Boolean)
             .some((value) => value?.toLowerCase().includes(normalizedSearch));
-    });
+    }) : movements;
 
     return (
         <div className="grid gap-8 xl:grid-cols-[minmax(0,1.2fr)_minmax(340px,0.8fr)]">
@@ -35,6 +77,8 @@ export default function InventoryMovementsPage() {
                     </label>
                 </div>
 
+                {loadError ? <p className="mt-4 rounded-2xl bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-700">{loadError} {isFallback ? 'Mostrando historial local de respaldo.' : ''}</p> : null}
+
                 <div className="mt-6 overflow-hidden rounded-3xl border border-slate-100">
                     <table className="w-full text-left text-sm">
                         <thead className="bg-slate-50/70 text-xs font-black uppercase tracking-[0.18em] text-slate-400">
@@ -47,7 +91,7 @@ export default function InventoryMovementsPage() {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                            {movements.map((movement) => (
+                            {visibleMovements.map((movement) => (
                                 <tr key={movement.id}>
                                     <td className="px-5 py-4">
                                         <p className="font-extrabold text-slate-900">{movement.productName}</p>
@@ -66,7 +110,7 @@ export default function InventoryMovementsPage() {
                 </div>
             </section>
 
-            <MovementForm products={getInventoryItems()} locations={inventoryLocations} />
+            <MovementForm products={isFallback ? fallbackProducts : (products.length > 0 ? products : fallbackProducts)} locations={locations.length > 0 ? locations : inventoryLocations} onSuccess={loadData} />
         </div>
     );
 }

@@ -8,6 +8,8 @@
     "dependencies": {
         "hono": "^4.0.0",
         "tsx": "^4.7.1",
+        "@vendix/billing-core": "file:../../packages/billing-core",
+        "@vendix/database": "file:../../packages/database",
         "@vendix/types": "file:../../packages/types",
         "@vendix/utils": "file:../../packages/utils"
     }

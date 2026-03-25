@@ -2,8 +2,11 @@ import type {
     InventoryAlert,
     InventoryListItem,
     InventoryLocationStock,
+    InventoryMetrics,
+    InventoryMovementInput,
     InventoryMovementRecord,
     InventoryProductDetail,
+    InventoryTransferInput,
 } from '@vendix/types';
 
 export const inventoryLocations = [
@@ -321,6 +324,162 @@ export const findProductByScan = (value: string) => {
     }
 
     return getInventoryItems().find((item) =>
+        [item.sku, item.barcode, item.qrCode, item.name]
+            .filter(Boolean)
+            .some((field) => field?.toLowerCase() === normalizedValue),
+    ) ?? null;
+};
+
+type InventoryListQuery = {
+    page?: number;
+    pageSize?: number;
+    search?: string;
+    category?: string;
+    locationId?: string;
+    lowStock?: boolean;
+};
+
+type InventoryMovementsQuery = {
+    page?: number;
+    pageSize?: number;
+    productId?: string;
+    search?: string;
+};
+
+const requestJson = async <T>(path: string) => {
+    const response = await fetch(path, { cache: 'no-store' });
+    const payload = (await response.json().catch(() => null)) as T | { error?: string } | null;
+
+    if (!response.ok) {
+        throw new Error((payload as { error?: string } | null)?.error ?? `Request failed with status ${response.status}`);
+    }
+
+    return payload as T;
+};
+
+const toQueryString = (params: Record<string, string | number | boolean | undefined>) => {
+    const searchParams = new URLSearchParams();
+
+    Object.entries(params).forEach(([key, value]) => {
+        if (value === undefined || value === '') {
+            return;
+        }
+        searchParams.set(key, String(value));
+    });
+
+    return searchParams.toString();
+};
+
+export const fetchInventoryItems = async (query: InventoryListQuery = {}) => {
+    const qs = toQueryString({
+        page: query.page,
+        pageSize: query.pageSize,
+        search: query.search,
+        category: query.category,
+        locationId: query.locationId,
+        lowStock: query.lowStock,
+    });
+
+    return requestJson<{ data: InventoryListItem[]; pagination: { page: number; pageSize: number; total: number; totalPages: number } }>(
+        `/api/inventory${qs ? `?${qs}` : ''}`,
+    );
+};
+
+export const fetchInventoryDetail = async (productId: string) => {
+    return requestJson<InventoryProductDetail>(`/api/inventory/${productId}`);
+};
+
+export const fetchLowStockAlerts = async (locationId?: string) => {
+    const qs = toQueryString({ locationId });
+    const response = await requestJson<{ data: InventoryAlert[]; total: number }>(`/api/inventory/low-stock${qs ? `?${qs}` : ''}`);
+    return response.data;
+};
+
+export const fetchInventoryMovements = async (query: InventoryMovementsQuery = {}) => {
+    const qs = toQueryString({
+        page: query.page,
+        pageSize: query.pageSize,
+        productId: query.productId,
+        search: query.search,
+    });
+
+    return requestJson<{ data: InventoryMovementRecord[]; pagination: { page: number; pageSize: number; total: number; totalPages: number } }>(
+        `/api/inventory/movements${qs ? `?${qs}` : ''}`,
+    );
+};
+
+export const fetchInventoryMetrics = async () => {
+    return requestJson<InventoryMetrics>('/api/inventory/metrics');
+};
+
+export const createInventoryMovement = async (payload: InventoryMovementInput) => {
+    const response = await fetch('/api/inventory/movement', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+    });
+
+    const data = await response.json().catch(() => null);
+    if (!response.ok) {
+        throw new Error(data?.error ?? 'No fue posible registrar el movimiento.');
+    }
+    return data;
+};
+
+export const createInventoryTransfer = async (payload: InventoryTransferInput) => {
+    const response = await fetch('/api/inventory/transfer', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+    });
+
+    const data = await response.json().catch(() => null);
+    if (!response.ok) {
+        throw new Error(data?.error ?? 'No fue posible ejecutar la transferencia.');
+    }
+    return data;
+};
+
+export const runInventoryBatch = async (payload: { action: 'import' | 'export' | 'update'; csvContent?: string; items?: unknown[] }) => {
+    const response = await fetch('/api/inventory/batch', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+    });
+
+    const data = await response.json().catch(() => null);
+    if (!response.ok) {
+        throw new Error(data?.error ?? 'No fue posible ejecutar la operación masiva.');
+    }
+    return data;
+};
+
+export const deriveInventoryLocations = (items: InventoryListItem[]) => {
+    const map = new Map<string, { id: string; name: string; type: string }>();
+    items.forEach((item) => {
+        item.stockByLocation.forEach((stock) => {
+            map.set(stock.locationId, {
+                id: stock.locationId,
+                name: stock.locationName,
+                type: stock.locationType,
+            });
+        });
+    });
+
+    return Array.from(map.values()).sort((left, right) => left.name.localeCompare(right.name, 'es'));
+};
+
+export const deriveInventoryCategories = (items: InventoryListItem[]) => {
+    return Array.from(new Set(items.map((item) => item.category).filter(Boolean) as string[]));
+};
+
+export const findProductByScanInRows = (items: InventoryListItem[], value: string) => {
+    const normalizedValue = value.trim().toLowerCase();
+    if (!normalizedValue) {
+        return null;
+    }
+
+    return items.find((item) =>
         [item.sku, item.barcode, item.qrCode, item.name]
             .filter(Boolean)
             .some((field) => field?.toLowerCase() === normalizedValue),

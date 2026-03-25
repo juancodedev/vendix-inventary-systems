@@ -1,5 +1,7 @@
 import { Hono } from 'hono';
 import { getVendixContext } from '@vendix/utils';
+import { prisma } from '@vendix/database';
+import { assignFreePlanToTenant } from '@vendix/billing-core';
 
 const app = new Hono();
 
@@ -12,9 +14,21 @@ app.get('/', (c) => {
 });
 
 app.post('/setup', async (c) => {
-    const { name, plan } = await c.req.json();
-    // Logic to create a new tenant schema/database entry
-    return c.json({ status: 'created', tenant_id: 'new-uuid' });
+    const { name } = (await c.req.json()) as { name?: string };
+    if (!name) {
+        return c.json({ error: 'name es obligatorio.' }, 400);
+    }
+
+    const tenant = await prisma.tenant.create({
+        data: {
+            name,
+            plan: 'FREE',
+        },
+    });
+
+    await assignFreePlanToTenant(tenant.id);
+
+    return c.json({ status: 'created', tenant_id: tenant.id, plan: 'FREE' }, 201);
 });
 
 export default app;

@@ -2,13 +2,15 @@
 
 import React, { useMemo, useState } from 'react';
 import type { InventoryListItem } from '@vendix/types';
+import { createInventoryTransfer } from '@/lib/inventory';
 
 type TransferFormProps = {
     products: InventoryListItem[];
     locations: Array<{ id: string; name: string; type: string }>;
+    onSuccess?: () => Promise<void> | void;
 };
 
-export default function TransferForm({ products, locations }: TransferFormProps) {
+export default function TransferForm({ products, locations, onSuccess }: TransferFormProps) {
     const [productId, setProductId] = useState(products[0]?.id ?? '');
     const [sourceLocationId, setSourceLocationId] = useState(locations[0]?.id ?? '');
     const [destinationLocationId, setDestinationLocationId] = useState(locations[1]?.id ?? locations[0]?.id ?? '');
@@ -16,11 +18,12 @@ export default function TransferForm({ products, locations }: TransferFormProps)
     const [reference, setReference] = useState('');
     const [message, setMessage] = useState('');
     const [error, setError] = useState('');
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
     const selectedProduct = products.find((product) => product.id === productId) ?? products[0];
     const sourceStock = useMemo(() => selectedProduct?.stockByLocation.find((stock) => stock.locationId === sourceLocationId), [selectedProduct, sourceLocationId]);
 
-    const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         setError('');
         setMessage('');
@@ -46,7 +49,26 @@ export default function TransferForm({ products, locations }: TransferFormProps)
             return;
         }
 
-        setMessage(`Transferencia validada para ${normalizedQuantity} unidades. Conecta este formulario al endpoint POST /inventory/transfer para ejecutar la salida y la entrada.`);
+        try {
+            setIsSubmitting(true);
+            await createInventoryTransfer({
+                productId: selectedProduct.id,
+                sourceLocationId,
+                destinationLocationId,
+                quantity: normalizedQuantity,
+                reference: reference.trim() || undefined,
+                notes: undefined,
+            });
+
+            setMessage(`Transferencia registrada para ${normalizedQuantity} unidades.`);
+            if (onSuccess) {
+                await onSuccess();
+            }
+        } catch (submitError) {
+            setError(submitError instanceof Error ? submitError.message : 'No fue posible ejecutar la transferencia.');
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     return (
@@ -105,8 +127,8 @@ export default function TransferForm({ products, locations }: TransferFormProps)
             {error ? <p className="mt-4 rounded-2xl bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{error}</p> : null}
             {message ? <p className="mt-4 rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{message}</p> : null}
 
-            <button type="submit" className="mt-6 w-full rounded-2xl bg-indigo-600 px-5 py-4 text-sm font-black uppercase tracking-[0.16em] text-white transition hover:bg-indigo-700">
-                Ejecutar transferencia
+            <button type="submit" disabled={isSubmitting} className="mt-6 w-full rounded-2xl bg-indigo-600 px-5 py-4 text-sm font-black uppercase tracking-[0.16em] text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60">
+                {isSubmitting ? 'Procesando...' : 'Ejecutar transferencia'}
             </button>
         </form>
     );

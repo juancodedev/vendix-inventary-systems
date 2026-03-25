@@ -9,6 +9,7 @@ import type {
     InventoryListItem,
     InventoryListResponse,
     InventoryLocationStock,
+    InventoryMetrics,
     InventoryMovementInput,
     InventoryMovementRecord,
     InventoryProductDetail,
@@ -438,6 +439,130 @@ app.get('/inventory/low-stock', async (c) => {
         return c.json({ data: alerts, total: alerts.length });
     } catch (error) {
         return c.json(errorResponse('No fue posible cargar las alertas de bajo stock.', 500, String(error)), 500);
+    }
+});
+
+app.get('/inventory/metrics', async (c) => {
+    const ctx = getVendixContext(c.req);
+    if (!ensureRoles(ctx, READ_ROLES)) {
+        return c.json(errorResponse('No tienes permisos para consultar métricas.', 403), 403);
+    }
+
+    try {
+        const [products, inventories] = await prisma.$transaction([
+            prisma.product.findMany({
+                where: {
+                    tenantId: ctx.tenantId,
+                    deletedAt: null,
+                },
+                select: {
+                    id: true,
+                    price: true,
+                },
+            }),
+            prisma.inventory.findMany({
+                where: {
+                    tenantId: ctx.tenantId,
+                },
+                select: {
+                    productId: true,
+                    quantity: true,
+                    minStock: true,
+                },
+            }),
+        ]);
+
+        const productPriceMap = new Map(products.map((product) => [product.id, toNumber(product.price)]));
+
+        const metrics: InventoryMetrics = {
+            skuCount: products.length,
+            totalUnits: inventories.reduce((total, inventory) => total + inventory.quantity, 0),
+            lowStockCount: inventories.filter((inventory) => inventory.quantity <= inventory.minStock).length,
+            criticalCount: inventories.filter((inventory) => inventory.quantity === 0).length,
+            inventoryValue: inventories.reduce(
+                (total, inventory) => total + inventory.quantity * (productPriceMap.get(inventory.productId) ?? 0),
+                0,
+            ),
+        };
+
+        return c.json(metrics);
+    } catch (error) {
+        return c.json(errorResponse('No fue posible cargar las métricas de inventario.', 500, String(error)), 500);
+    }
+});
+
+app.get('/inventory/movements', async (c) => {
+    const ctx = getVendixContext(c.req);
+    if (!ensureRoles(ctx, READ_ROLES)) {
+        return c.json(errorResponse('No tienes permisos para consultar movimientos.', 403), 403);
+    }
+
+    try {
+        const page = Math.max(parseInteger(c.req.query('page'), 1), 1);
+        const pageSize = normalizePageSize(c.req.query('pageSize'));
+        const offset = (page - 1) * pageSize;
+        const productId = c.req.query('productId')?.trim();
+        const search = c.req.query('search')?.trim();
+
+        const where: Prisma.InventoryMovementWhereInput = {
+            tenantId: ctx.tenantId,
+            ...(productId ? { productId } : {}),
+            ...(search
+                ? {
+                      OR: [
+                          { reference: { contains: search, mode: 'insensitive' } },
+                          { notes: { contains: search, mode: 'insensitive' } },
+                          { product: { name: { contains: search, mode: 'insensitive' } } },
+                          { product: { sku: { contains: search, mode: 'insensitive' } } },
+                      ],
+                  }
+                : {}),
+        };
+
+        const [movements, total] = await prisma.$transaction([
+            prisma.inventoryMovement.findMany({
+                where,
+                orderBy: { createdAt: 'desc' },
+                skip: offset,
+                take: pageSize,
+                include: {
+                    product: {
+                        select: {
+                            name: true,
+                            sku: true,
+                        },
+                    },
+                    location: {
+                        select: {
+                            name: true,
+                        },
+                    },
+                    sourceLocation: {
+                        select: {
+                            name: true,
+                        },
+                    },
+                    destinationLocation: {
+                        select: {
+                            name: true,
+                        },
+                    },
+                },
+            }),
+            prisma.inventoryMovement.count({ where }),
+        ]);
+
+        return c.json({
+            data: movements.map(serializeMovement),
+            pagination: {
+                page,
+                pageSize,
+                total,
+                totalPages: Math.max(Math.ceil(total / pageSize), 1),
+            },
+        });
+    } catch (error) {
+        return c.json(errorResponse('No fue posible cargar movimientos de inventario.', 500, String(error)), 500);
     }
 });
 

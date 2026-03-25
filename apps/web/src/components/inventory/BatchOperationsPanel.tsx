@@ -2,19 +2,21 @@
 
 import React, { useMemo, useState } from 'react';
 import type { InventoryListItem } from '@vendix/types';
-import { buildInventoryCsv } from '@/lib/inventory';
+import { runInventoryBatch } from '@/lib/inventory';
 
 type BatchOperationsPanelProps = {
     items: InventoryListItem[];
+    onInventoryUpdated?: () => Promise<void> | void;
 };
 
 const exampleImportCsv = `sku,name,price,locationId,quantity,minStock,category\nVDX-POS-001,Terminal SmartPOS VDX One,449.90,loc-store-central,12,4,POS`;
 
-export default function BatchOperationsPanel({ items }: BatchOperationsPanelProps) {
+export default function BatchOperationsPanel({ items, onInventoryUpdated }: BatchOperationsPanelProps) {
     const [mode, setMode] = useState<'import' | 'update'>('import');
     const [payload, setPayload] = useState(exampleImportCsv);
     const [message, setMessage] = useState('');
     const [error, setError] = useState('');
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
     const templateForUpdate = useMemo(() => {
         const rows = items.slice(0, 3).map((item) => ({
@@ -32,10 +34,10 @@ export default function BatchOperationsPanel({ items }: BatchOperationsPanelProp
     const handleLoadTemplate = () => {
         setPayload(mode === 'import' ? exampleImportCsv : templateForUpdate);
         setError('');
-        setMessage('Template cargado. Ajusta datos y conecta al endpoint POST /inventory/batch para persistir.');
+        setMessage('Template cargado. Ajusta datos y ejecuta para persistir en inventory-service.');
     };
 
-    const handleSimulate = () => {
+    const handleSimulate = async () => {
         setError('');
         setMessage('');
 
@@ -51,7 +53,18 @@ export default function BatchOperationsPanel({ items }: BatchOperationsPanelProp
                 return;
             }
 
-            setMessage(`Importación validada con ${lines.length - 1} filas. Endpoint objetivo: POST /inventory/batch con action=import.`);
+            try {
+                setIsSubmitting(true);
+                const result = await runInventoryBatch({ action: 'import', csvContent: payload });
+                setMessage(`Importación completada. Filas procesadas: ${result.imported ?? result.count ?? lines.length - 1}.`);
+                if (onInventoryUpdated) {
+                    await onInventoryUpdated();
+                }
+            } catch (submitError) {
+                setError(submitError instanceof Error ? submitError.message : 'No fue posible ejecutar la importación.');
+            } finally {
+                setIsSubmitting(false);
+            }
             return;
         }
 
@@ -62,21 +75,39 @@ export default function BatchOperationsPanel({ items }: BatchOperationsPanelProp
                 return;
             }
 
-            setMessage(`Actualización masiva validada para ${data.length} items. Endpoint objetivo: POST /inventory/batch con action=update.`);
+            setIsSubmitting(true);
+            const result = await runInventoryBatch({ action: 'update', items: data });
+            setMessage(`Actualización masiva completada para ${result.count ?? data.length} items.`);
+            if (onInventoryUpdated) {
+                await onInventoryUpdated();
+            }
         } catch {
             setError('El payload update debe ser JSON válido.');
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
-    const handleDownloadFilteredCsv = () => {
-        const csv = buildInventoryCsv(items);
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = 'inventory-batch-export.csv';
-        link.click();
-        URL.revokeObjectURL(url);
+    const handleDownloadFilteredCsv = async () => {
+        try {
+            setError('');
+            setMessage('');
+            const result = await runInventoryBatch({ action: 'export' });
+            if (!result?.csv) {
+                throw new Error('El servicio no devolvió un CSV para exportar.');
+            }
+
+            const blob = new Blob([result.csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'inventory-batch-export.csv';
+            link.click();
+            URL.revokeObjectURL(url);
+            setMessage('Exportación generada desde inventory-service.');
+        } catch (downloadError) {
+            setError(downloadError instanceof Error ? downloadError.message : 'No fue posible exportar el inventario.');
+        }
     };
 
     return (
@@ -121,8 +152,8 @@ export default function BatchOperationsPanel({ items }: BatchOperationsPanelProp
             {error ? <p className="mt-4 rounded-2xl bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{error}</p> : null}
             {message ? <p className="mt-4 rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{message}</p> : null}
 
-            <button type="button" onClick={handleSimulate} className="mt-5 w-full rounded-2xl bg-indigo-600 px-5 py-4 text-sm font-black uppercase tracking-[0.16em] text-white transition hover:bg-indigo-700">
-                Validar batch
+            <button type="button" disabled={isSubmitting} onClick={handleSimulate} className="mt-5 w-full rounded-2xl bg-indigo-600 px-5 py-4 text-sm font-black uppercase tracking-[0.16em] text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60">
+                {isSubmitting ? 'Procesando batch...' : 'Ejecutar batch'}
             </button>
         </section>
     );

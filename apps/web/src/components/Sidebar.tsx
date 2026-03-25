@@ -18,6 +18,8 @@ export default function Sidebar() {
         { icon: <ShoppingCart size={20} />, label: 'Movimientos', href: '/dashboard/inventory/movements' },
         { icon: <Store size={20} />, label: 'Transferencias', href: '/dashboard/inventory/transfer' },
         { icon: <Users size={20} />, label: 'Usuarios', href: '/dashboard/users' },
+        { icon: <Settings size={20} />, label: 'Suscripcion', href: '/subscription' },
+        { icon: <Settings size={20} />, label: 'Billing', href: '/billing' },
         { icon: <Store size={20} />, label: 'Mi Tienda', href: '/dashboard/settings' },
         { icon: <Settings size={20} />, label: 'Configuración', href: '/dashboard/profile' },
     ];

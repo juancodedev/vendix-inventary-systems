@@ -2,11 +2,13 @@
 
 import React, { useState } from 'react';
 import type { InventoryListItem } from '@vendix/types';
+import { createInventoryMovement } from '@/lib/inventory';
 
 type MovementFormProps = {
     products: InventoryListItem[];
     locations: Array<{ id: string; name: string; type: string }>;
     defaultProductId?: string;
+    onSuccess?: () => Promise<void> | void;
 };
 
 const movementTypes = [
@@ -15,7 +17,7 @@ const movementTypes = [
     { value: 'ADJUSTMENT', label: 'Ajuste' },
 ];
 
-export default function MovementForm({ products, locations, defaultProductId }: MovementFormProps) {
+export default function MovementForm({ products, locations, defaultProductId, onSuccess }: MovementFormProps) {
     const [productId, setProductId] = useState(defaultProductId ?? products[0]?.id ?? '');
     const [locationId, setLocationId] = useState(locations[0]?.id ?? '');
     const [type, setType] = useState('IN');
@@ -24,8 +26,9 @@ export default function MovementForm({ products, locations, defaultProductId }: 
     const [notes, setNotes] = useState('');
     const [message, setMessage] = useState('');
     const [error, setError] = useState('');
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
-    const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         setMessage('');
         setError('');
@@ -41,7 +44,26 @@ export default function MovementForm({ products, locations, defaultProductId }: 
             return;
         }
 
-        setMessage(`Movimiento ${type} preparado para ${normalizedQuantity} unidades. Conecta este formulario al endpoint POST /inventory/movement para persistirlo.`);
+        try {
+            setIsSubmitting(true);
+            await createInventoryMovement({
+                productId,
+                locationId,
+                type: type as 'IN' | 'OUT' | 'ADJUSTMENT',
+                quantity: normalizedQuantity,
+                reference: reference.trim() || undefined,
+                notes: notes.trim() || undefined,
+            });
+
+            setMessage(`Movimiento ${type} registrado para ${normalizedQuantity} unidades.`);
+            if (onSuccess) {
+                await onSuccess();
+            }
+        } catch (submitError) {
+            setError(submitError instanceof Error ? submitError.message : 'No fue posible registrar el movimiento.');
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     return (
@@ -101,8 +123,8 @@ export default function MovementForm({ products, locations, defaultProductId }: 
             {error ? <p className="mt-4 rounded-2xl bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{error}</p> : null}
             {message ? <p className="mt-4 rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{message}</p> : null}
 
-            <button type="submit" className="mt-6 w-full rounded-2xl bg-slate-900 px-5 py-4 text-sm font-black uppercase tracking-[0.16em] text-white transition hover:bg-slate-700">
-                Registrar movimiento
+            <button type="submit" disabled={isSubmitting} className="mt-6 w-full rounded-2xl bg-slate-900 px-5 py-4 text-sm font-black uppercase tracking-[0.16em] text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60">
+                {isSubmitting ? 'Guardando...' : 'Registrar movimiento'}
             </button>
         </form>
     );

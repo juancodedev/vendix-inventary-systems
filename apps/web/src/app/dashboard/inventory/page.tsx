@@ -1,6 +1,6 @@
 'use client';
 
-import React, { startTransition, useDeferredValue, useState } from 'react';
+import React, { startTransition, useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { AlertTriangle, ArrowRightLeft, Download, Search } from 'lucide-react';
 import InventoryTable from '@/components/inventory/InventoryTable';
@@ -10,16 +10,20 @@ import ProductCard from '@/components/inventory/ProductCard';
 import ScannerComponent from '@/components/inventory/ScannerComponent';
 import {
     buildInventoryCsv,
-    filterInventoryItems,
-    findProductByScan,
+    deriveInventoryCategories,
+    deriveInventoryLocations,
+    fetchInventoryItems,
+    fetchInventoryMetrics,
+    fetchLowStockAlerts,
+    findProductByScanInRows,
     formatCurrency,
     getInventoryItems,
     getInventoryMetrics,
     getLowStockAlerts,
     inventoryCategories,
     inventoryLocations,
-    paginateInventoryItems,
 } from '@/lib/inventory';
+import type { InventoryAlert, InventoryListItem, InventoryMetrics } from '@vendix/types';
 
 const PAGE_SIZE = 4;
 
@@ -30,21 +34,69 @@ export default function InventoryPage() {
     const [lowStockOnly, setLowStockOnly] = useState(false);
     const [page, setPage] = useState(1);
     const [scannerResult, setScannerResult] = useState('');
+    const [rows, setRows] = useState<InventoryListItem[]>([]);
+    const [alerts, setAlerts] = useState<InventoryAlert[]>([]);
+    const [metrics, setMetrics] = useState<InventoryMetrics | null>(null);
+    const [totalPages, setTotalPages] = useState(1);
+    const [totalRows, setTotalRows] = useState(0);
+    const [isLoading, setIsLoading] = useState(true);
+    const [loadError, setLoadError] = useState('');
+    const [isUsingFallback, setIsUsingFallback] = useState(false);
 
     const deferredSearch = useDeferredValue(search);
-    const metrics = getInventoryMetrics();
-    const alerts = getLowStockAlerts(locationId || undefined).slice(0, 3);
-    const filteredRows = filterInventoryItems({
-        search: deferredSearch,
-        category: category || undefined,
-        locationId: locationId || undefined,
-        lowStockOnly,
-    });
-    const paginated = paginateInventoryItems(filteredRows, page, PAGE_SIZE);
-    const featuredRows = filteredRows.slice(0, 2);
+    const fallbackRows = useMemo(() => getInventoryItems(), []);
+    const activeRows = isUsingFallback ? fallbackRows : rows;
+    const activeLocations = useMemo(
+        () => (isUsingFallback ? inventoryLocations : deriveInventoryLocations(rows)),
+        [isUsingFallback, rows],
+    );
+    const activeCategories = useMemo(
+        () => (isUsingFallback ? inventoryCategories : deriveInventoryCategories(rows)),
+        [isUsingFallback, rows],
+    );
+    const activeAlerts = isUsingFallback ? getLowStockAlerts(locationId || undefined).slice(0, 3) : alerts.slice(0, 3);
+    const fallbackMetrics = useMemo(() => getInventoryMetrics(), []);
+    const activeMetrics = isUsingFallback ? fallbackMetrics : metrics ?? fallbackMetrics;
+    const featuredRows = activeRows.slice(0, 2);
+
+    const loadData = useCallback(async () => {
+        setIsLoading(true);
+        setLoadError('');
+
+        try {
+            const [inventoryResponse, lowStockResponse, metricsResponse] = await Promise.all([
+                fetchInventoryItems({
+                    page,
+                    pageSize: PAGE_SIZE,
+                    search: deferredSearch || undefined,
+                    category: category || undefined,
+                    locationId: locationId || undefined,
+                    lowStock: lowStockOnly,
+                }),
+                fetchLowStockAlerts(locationId || undefined),
+                fetchInventoryMetrics(),
+            ]);
+
+            setRows(inventoryResponse.data);
+            setTotalPages(inventoryResponse.pagination.totalPages);
+            setTotalRows(inventoryResponse.pagination.total);
+            setAlerts(lowStockResponse);
+            setMetrics(metricsResponse);
+            setIsUsingFallback(false);
+        } catch (error) {
+            setIsUsingFallback(true);
+            setLoadError(error instanceof Error ? error.message : 'No fue posible cargar inventario en tiempo real.');
+        } finally {
+            setIsLoading(false);
+        }
+    }, [category, deferredSearch, locationId, lowStockOnly, page]);
+
+    useEffect(() => {
+        void loadData();
+    }, [loadData]);
 
     const handleExport = () => {
-        const csv = buildInventoryCsv(filteredRows);
+        const csv = buildInventoryCsv(activeRows);
         const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
@@ -55,7 +107,7 @@ export default function InventoryPage() {
     };
 
     const handleDetected = (value: string) => {
-        const match = findProductByScan(value);
+        const match = findProductByScanInRows(activeRows, value);
         startTransition(() => {
             setSearch(match?.sku ?? value);
             setScannerResult(match ? `Coincidencia detectada: ${match.name}` : `No se encontro coincidencia exacta para ${value}.`);
@@ -100,11 +152,12 @@ export default function InventoryPage() {
                 </div>
 
                 <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                    <MetricCard label="SKUs activos" value={String(metrics.skuCount)} accent="slate" />
-                    <MetricCard label="Unidades disponibles" value={String(metrics.totalUnits)} accent="emerald" />
-                    <MetricCard label="Alertas de bajo stock" value={String(metrics.lowStockCount)} accent="amber" />
-                    <MetricCard label="Valor del inventario" value={formatCurrency(metrics.inventoryValue)} accent="indigo" />
+                    <MetricCard label="SKUs activos" value={String(activeMetrics.skuCount)} accent="slate" />
+                    <MetricCard label="Unidades disponibles" value={String(activeMetrics.totalUnits)} accent="emerald" />
+                    <MetricCard label="Alertas de bajo stock" value={String(activeMetrics.lowStockCount)} accent="amber" />
+                    <MetricCard label="Valor del inventario" value={formatCurrency(activeMetrics.inventoryValue)} accent="indigo" />
                 </div>
+                {loadError ? <p className="mt-4 rounded-2xl bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-700">{loadError} {isUsingFallback ? 'Mostrando dataset local de respaldo.' : ''}</p> : null}
             </section>
 
             <section className="grid gap-8 xl:grid-cols-[minmax(0,1.45fr)_minmax(340px,0.85fr)]">
@@ -123,14 +176,14 @@ export default function InventoryPage() {
 
                             <select value={locationId} onChange={(event) => handleFilterChange(() => setLocationId(event.target.value))} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 font-medium text-slate-700 outline-none transition focus:border-indigo-400 focus:bg-white">
                                 <option value="">Todas las sucursales</option>
-                                {inventoryLocations.map((location) => (
+                                {activeLocations.map((location) => (
                                     <option key={location.id} value={location.id}>{location.name}</option>
                                 ))}
                             </select>
 
                             <select value={category} onChange={(event) => handleFilterChange(() => setCategory(event.target.value))} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 font-medium text-slate-700 outline-none transition focus:border-indigo-400 focus:bg-white">
                                 <option value="">Todas las categorias</option>
-                                {inventoryCategories.map((item) => (
+                                {activeCategories.map((item) => (
                                     <option key={item} value={item}>{item}</option>
                                 ))}
                             </select>
@@ -145,11 +198,12 @@ export default function InventoryPage() {
                                 Solo bajo stock
                             </button>
 
-                            <p className="text-sm font-medium text-slate-500">{filteredRows.length} productos visibles</p>
+                            <p className="text-sm font-medium text-slate-500">{isUsingFallback ? activeRows.length : totalRows} productos visibles</p>
                         </div>
                     </div>
 
-                    <InventoryTable rows={paginated.rows} page={paginated.page} totalPages={paginated.totalPages} onPageChange={setPage} />
+                    {isLoading ? <div className="rounded-[2rem] border border-slate-200 bg-white p-6 text-sm font-semibold text-slate-500 shadow-sm">Cargando inventario en tiempo real...</div> : null}
+                    <InventoryTable rows={activeRows} page={page} totalPages={isUsingFallback ? 1 : totalPages} onPageChange={setPage} />
                 </div>
 
                 <div className="space-y-6">
@@ -176,8 +230,8 @@ export default function InventoryPage() {
                         </div>
                     </div>
 
-                    <MovementForm products={getInventoryItems()} locations={inventoryLocations} />
-                    <BatchOperationsPanel items={filteredRows} />
+                    <MovementForm products={activeRows.length > 0 ? activeRows : fallbackRows} locations={activeLocations.length > 0 ? activeLocations : inventoryLocations} onSuccess={loadData} />
+                    <BatchOperationsPanel items={activeRows} onInventoryUpdated={loadData} />
                 </div>
             </section>
 

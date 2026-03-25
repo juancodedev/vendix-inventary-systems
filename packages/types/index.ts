@@ -135,6 +135,14 @@ export interface InventoryPagination {
   totalPages: number;
 }
 
+export interface InventoryMetrics {
+  skuCount: number;
+  totalUnits: number;
+  lowStockCount: number;
+  criticalCount: number;
+  inventoryValue: number;
+}
+
 export interface InventoryListResponse {
   data: InventoryListItem[];
   pagination: InventoryPagination;

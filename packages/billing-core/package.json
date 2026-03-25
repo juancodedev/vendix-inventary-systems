@@ -1,0 +1,13 @@
+{
+  "name": "@vendix/billing-core",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "main": "index.ts",
+  "types": "index.ts",
+  "dependencies": {
+    "@vendix/database": "file:../database",
+    "@vendix/utils": "file:../utils",
+    "stripe": "^16.12.0"
+  }
+}

@@ -1,21 +1,77 @@
-import React from 'react';
+'use client';
+
+import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, Clock3, ScanLine, Warehouse } from 'lucide-react';
-import { notFound } from 'next/navigation';
 import ProductCard from '@/components/inventory/ProductCard';
 import StockBadge from '@/components/inventory/StockBadge';
-import { formatDateTime, getInventoryDetail } from '@/lib/inventory';
+import { fetchInventoryDetail, formatDateTime, getInventoryDetail } from '@/lib/inventory';
+import type { InventoryProductDetail } from '@vendix/types';
 
-export default async function InventoryDetailPage({ params }: { params: Promise<{ id: string }> }) {
-    const { id } = await params;
-    const product = getInventoryDetail(id);
+export default function InventoryDetailPage() {
+    const router = useRouter();
+    const params = useParams<{ id: string }>();
+    const productId = params.id;
+
+    const fallbackProduct = useMemo(() => getInventoryDetail(productId), [productId]);
+    const [product, setProduct] = useState<InventoryProductDetail | null>(null);
+    const [isFallback, setIsFallback] = useState(false);
+    const [loadError, setLoadError] = useState('');
+    const [isLoading, setIsLoading] = useState(true);
+
+    useEffect(() => {
+        let isMounted = true;
+
+        const load = async () => {
+            setIsLoading(true);
+            setLoadError('');
+
+            try {
+                const detail = await fetchInventoryDetail(productId);
+                if (!isMounted) {
+                    return;
+                }
+                setProduct(detail);
+                setIsFallback(false);
+            } catch (error) {
+                if (!isMounted) {
+                    return;
+                }
+
+                if (fallbackProduct) {
+                    setProduct(fallbackProduct);
+                    setIsFallback(true);
+                    setLoadError(error instanceof Error ? error.message : 'No fue posible cargar el detalle en tiempo real.');
+                } else {
+                    router.replace('/dashboard/inventory');
+                }
+            } finally {
+                if (isMounted) {
+                    setIsLoading(false);
+                }
+            }
+        };
+
+        void load();
+
+        return () => {
+            isMounted = false;
+        };
+    }, [fallbackProduct, productId, router]);
+
+    if (isLoading && !product) {
+        return <div className="rounded-[2rem] border border-slate-200 bg-white p-6 text-sm font-semibold text-slate-500 shadow-sm">Cargando detalle de inventario...</div>;
+    }
 
     if (!product) {
-        notFound();
+        return null;
     }
 
     return (
         <div className="space-y-8">
+            {loadError ? <p className="rounded-2xl bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-700">{loadError} {isFallback ? 'Mostrando detalle local de respaldo.' : ''}</p> : null}
+
             <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
                     <Link href="/dashboard/inventory" className="inline-flex items-center gap-2 text-sm font-black uppercase tracking-[0.16em] text-slate-500 transition hover:text-slate-900">
