@@ -121,7 +121,7 @@ const createAuditLog = async (
             entity,
             entityId,
             action,
-            changes,
+            changes: changes as Prisma.InputJsonValue,
         },
     });
 };

@@ -4,6 +4,7 @@ import React, { startTransition, useDeferredValue, useState } from 'react';
 import Link from 'next/link';
 import { AlertTriangle, ArrowRightLeft, Download, Search } from 'lucide-react';
 import InventoryTable from '@/components/inventory/InventoryTable';
+import BatchOperationsPanel from '@/components/inventory/BatchOperationsPanel';
 import MovementForm from '@/components/inventory/MovementForm';
 import ProductCard from '@/components/inventory/ProductCard';
 import ScannerComponent from '@/components/inventory/ScannerComponent';
@@ -176,6 +177,7 @@ export default function InventoryPage() {
                     </div>
 
                     <MovementForm products={getInventoryItems()} locations={inventoryLocations} />
+                    <BatchOperationsPanel items={filteredRows} />
                 </div>
             </section>
 

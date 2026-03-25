@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PosCoreError, syncOfflineSales, type PosSyncRequest } from '@vendix/pos-core';
+import { PosCoreError, cancelPosSale, type PosCancelSaleRequest } from '@vendix/pos-core';
 import { getVendixContext } from '@vendix/utils';
 
 export const dynamic = 'force-dynamic';
@@ -26,16 +26,20 @@ const serializeError = (error: unknown, fallbackMessage: string) => {
     };
 };
 
-export async function POST(request: NextRequest) {
+export async function POST(
+    request: NextRequest,
+    context: { params: Promise<{ saleId: string }> },
+) {
     const ctx = getVendixContext(request);
 
     try {
-        const payload = (await request.json()) as PosSyncRequest;
-        const data = await syncOfflineSales(ctx, payload);
+        const { saleId } = await context.params;
+        const payload = (await request.json().catch(() => ({}))) as PosCancelSaleRequest;
+        const data = await cancelPosSale(ctx, saleId, payload);
 
-        return NextResponse.json(data, { status: data.ok ? 200 : 207 });
+        return NextResponse.json(data);
     } catch (error) {
-        const serialized = serializeError(error, 'No fue posible sincronizar las ventas offline.');
+        const serialized = serializeError(error, 'No fue posible cancelar la venta.');
         return NextResponse.json(serialized.body, { status: serialized.status });
     }
 }

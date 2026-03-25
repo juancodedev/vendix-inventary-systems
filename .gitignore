@@ -1,16 +1,56 @@
+# dependencies
 node_modules
-apps/web/.next/cache/webpack/client-development/1.pack.gz
-apps/web/.next/cache/webpack/client-development/1.pack.gz
-apps/web/.next/cache/webpack/client-development/2.pack.gz
-apps/web/.next/cache/webpack/client-development/index.pack.gz
-apps/web/.next/cache/webpack/client-development/index.pack.gz.old
-apps/web/.next/cache/webpack/server-development/0.pack.gz
-apps/web/.next/cache/webpack/server-development/1.pack.gz
-apps/web/.next/cache/webpack/server-development/index.pack.gz
-apps/web/.next/cache/webpack/server-development/index.pack.gz.old
-apps/web/.next/cache/webpack/client-development/1.pack.gz
-apps/web/.next/cache/webpack/client-development/index.pack.gz
-apps/web/.next/cache/webpack/client-development/index.pack.gz.old
-apps/web/.next/cache/webpack/server-development/0.pack.gz
-apps/web/.next/cache/webpack/server-development/index.pack.gz
-apps/web/.next/cache/webpack/server-development/index.pack.gz.old
+.pnp
+.pnp.js
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+/dist
+/public/build
+/public/dist
+
+# misc
+.DS_Store
+*.pem
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# local env files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# Turborepo
+.turbo
+
+# IDEs
+.idea
+.vscode
+*.swp
+*.swo
+
+# Project specific
+apps/web/.next
+apps/pos/dist
+packages/*/dist
+services/*/dist

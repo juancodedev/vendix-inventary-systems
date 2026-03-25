@@ -1,11 +1,15 @@
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import {
+    PosCoreError,
+    cancelPosSale,
     createPosSale,
     searchPosProducts,
     syncOfflineSales,
     validatePosStock,
+    type PosCancelSaleRequest,
     type PosSaleRequest,
     type PosStockValidationRequest,
     type PosSyncRequest,
@@ -16,10 +20,33 @@ const app = new Hono();
 
 app.use('*', cors());
 
-const errorResponse = (message: string, details?: unknown) => ({
+const errorResponse = (message: string, details?: unknown, code?: string) => ({
     error: message,
     details,
+    code,
 });
+
+const toStatusCode = (status: number): ContentfulStatusCode => {
+    if (status >= 100 && status <= 599) {
+        return status as ContentfulStatusCode;
+    }
+
+    return 500;
+};
+
+const serializeError = (error: unknown, fallbackMessage: string) => {
+    if (error instanceof PosCoreError) {
+        return {
+            body: errorResponse(error.message, error.details, error.code),
+            status: error.status,
+        };
+    }
+
+    return {
+        body: errorResponse(fallbackMessage, String(error), 'INTERNAL_ERROR'),
+        status: 500,
+    };
+};
 
 app.get('/health', (c) => {
     return c.json({ ok: true, service: 'pos-service' });
@@ -37,7 +64,8 @@ app.get('/pos/products', async (c) => {
 
         return c.json(response);
     } catch (error) {
-        return c.json(errorResponse('No fue posible cargar productos del POS.', String(error)), 400);
+        const serialized = serializeError(error, 'No fue posible cargar productos del POS.');
+        return c.json(serialized.body, toStatusCode(serialized.status));
     }
 });
 
@@ -50,7 +78,8 @@ app.post('/pos/validate-stock', async (c) => {
 
         return c.json(response);
     } catch (error) {
-        return c.json(errorResponse('No fue posible validar stock.', String(error)), 400);
+        const serialized = serializeError(error, 'No fue posible validar stock.');
+        return c.json(serialized.body, toStatusCode(serialized.status));
     }
 });
 
@@ -63,7 +92,22 @@ app.post('/pos/sale', async (c) => {
 
         return c.json(response, response.duplicate ? 200 : 201);
     } catch (error) {
-        return c.json(errorResponse('No fue posible registrar la venta.', String(error)), 400);
+        const serialized = serializeError(error, 'No fue posible registrar la venta.');
+        return c.json(serialized.body, toStatusCode(serialized.status));
+    }
+});
+
+app.post('/pos/sale/:saleId/cancel', async (c) => {
+    const ctx = getVendixContext(c.req);
+
+    try {
+        const payload = (await c.req.json().catch(() => ({}))) as PosCancelSaleRequest;
+        const response = await cancelPosSale(ctx, c.req.param('saleId'), payload);
+
+        return c.json(response);
+    } catch (error) {
+        const serialized = serializeError(error, 'No fue posible cancelar la venta.');
+        return c.json(serialized.body, toStatusCode(serialized.status));
     }
 });
 
@@ -76,7 +120,8 @@ app.post('/pos/sync', async (c) => {
 
         return c.json(response, response.ok ? 200 : 207);
     } catch (error) {
-        return c.json(errorResponse('No fue posible sincronizar ventas offline.', String(error)), 400);
+        const serialized = serializeError(error, 'No fue posible sincronizar ventas offline.');
+        return c.json(serialized.body, toStatusCode(serialized.status));
     }
 });
 

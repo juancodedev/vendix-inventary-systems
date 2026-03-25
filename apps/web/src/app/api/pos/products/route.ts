@@ -1,8 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { searchPosProducts } from '@vendix/pos-core';
+import { PosCoreError, searchPosProducts } from '@vendix/pos-core';
 import { getVendixContext } from '@vendix/utils';
 
 export const dynamic = 'force-dynamic';
+
+const serializeError = (error: unknown, fallbackMessage: string) => {
+    if (error instanceof PosCoreError) {
+        return {
+            body: {
+                error: error.message,
+                details: error.details,
+                code: error.code,
+            },
+            status: error.status,
+        };
+    }
+
+    return {
+        body: {
+            error: fallbackMessage,
+            details: String(error),
+            code: 'INTERNAL_ERROR',
+        },
+        status: 500,
+    };
+};
 
 export async function GET(request: NextRequest) {
     const ctx = getVendixContext(request);
@@ -17,12 +39,7 @@ export async function GET(request: NextRequest) {
 
         return NextResponse.json(data);
     } catch (error) {
-        return NextResponse.json(
-            {
-                error: 'No fue posible cargar productos del POS.',
-                details: String(error),
-            },
-            { status: 400 },
-        );
+        const serialized = serializeError(error, 'No fue posible cargar productos del POS.');
+        return NextResponse.json(serialized.body, { status: serialized.status });
     }
 }

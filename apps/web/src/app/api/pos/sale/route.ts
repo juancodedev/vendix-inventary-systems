@@ -1,8 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createPosSale, type PosSaleRequest } from '@vendix/pos-core';
+import { PosCoreError, createPosSale, type PosSaleRequest } from '@vendix/pos-core';
 import { getVendixContext } from '@vendix/utils';
 
 export const dynamic = 'force-dynamic';
+
+const serializeError = (error: unknown, fallbackMessage: string) => {
+    if (error instanceof PosCoreError) {
+        return {
+            body: {
+                error: error.message,
+                details: error.details,
+                code: error.code,
+            },
+            status: error.status,
+        };
+    }
+
+    return {
+        body: {
+            error: fallbackMessage,
+            details: String(error),
+            code: 'INTERNAL_ERROR',
+        },
+        status: 500,
+    };
+};
 
 export async function POST(request: NextRequest) {
     const ctx = getVendixContext(request);
@@ -13,12 +35,7 @@ export async function POST(request: NextRequest) {
 
         return NextResponse.json(data, { status: data.duplicate ? 200 : 201 });
     } catch (error) {
-        return NextResponse.json(
-            {
-                error: 'No fue posible registrar la venta.',
-                details: String(error),
-            },
-            { status: 400 },
-        );
+        const serialized = serializeError(error, 'No fue posible registrar la venta.');
+        return NextResponse.json(serialized.body, { status: serialized.status });
     }
 }

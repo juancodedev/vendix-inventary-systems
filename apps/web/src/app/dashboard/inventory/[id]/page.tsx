@@ -6,8 +6,9 @@ import ProductCard from '@/components/inventory/ProductCard';
 import StockBadge from '@/components/inventory/StockBadge';
 import { formatDateTime, getInventoryDetail } from '@/lib/inventory';
 
-export default function InventoryDetailPage({ params }: { params: { id: string } }) {
-    const product = getInventoryDetail(params.id);
+export default async function InventoryDetailPage({ params }: { params: Promise<{ id: string }> }) {
+    const { id } = await params;
+    const product = getInventoryDetail(id);
 
     if (!product) {
         notFound();

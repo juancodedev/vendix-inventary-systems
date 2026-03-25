@@ -3,11 +3,26 @@ import { hasAnyRole, type VendixContext } from '@vendix/utils';
 
 const POS_READ_ROLES = ['ADMIN', 'SELLER', 'POS'];
 const POS_WRITE_ROLES = ['ADMIN', 'SELLER', 'POS'];
+const POS_CANCEL_ROLES = ['ADMIN'];
 const DEFAULT_TAX_RATE = 0.12;
 const DEFAULT_PRODUCT_LIMIT = 24;
 const MAX_PRODUCT_LIMIT = 50;
+const MAX_TRANSACTION_RETRIES = 3;
+const POS_TRANSACTION_OPTIONS = {
+    isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+    maxWait: 5_000,
+    timeout: 10_000,
+} as const;
 
-type JsonRecord = Record<string, string | number | boolean | null | JsonRecord | JsonRecord[] | Array<string | number | boolean | null>>;
+type LockedInventoryRow = {
+    id: string;
+    tenantId: string;
+    productId: string;
+    locationId: string;
+    quantity: number;
+    minStock: number;
+};
+type PosTransactionClient = Prisma.TransactionClient;
 
 export type PosPaymentMethod = keyof typeof PaymentMethod;
 
@@ -22,6 +37,7 @@ export interface PosProductResult {
     locationId: string;
     locationName: string;
     stock: number;
+    minStock: number;
     isLowStock: boolean;
     lastUpdatedAt: string;
 }
@@ -72,7 +88,7 @@ export interface PosSaleRequest {
     items: PosSaleItemInput[];
     clientReference?: string;
     notes?: string;
-    metadata?: JsonRecord;
+    metadata?: Record<string, unknown>;
     taxRate?: number;
     offline?: boolean;
 }
@@ -84,6 +100,16 @@ export interface PosSaleItemResult {
     quantity: number;
     unitPrice: number;
     subtotal: number;
+    remainingStock: number;
+}
+
+export interface PosInventoryIssue {
+    productId: string;
+    name?: string;
+    sku?: string;
+    requestedQuantity: number;
+    availableQuantity: number;
+    reason: 'PRODUCT_NOT_FOUND' | 'INVENTORY_NOT_FOUND' | 'INSUFFICIENT_STOCK';
 }
 
 export interface PosSaleResponse {
@@ -104,6 +130,20 @@ export interface PosSaleResponse {
     items: PosSaleItemResult[];
 }
 
+export interface PosCancelSaleRequest {
+    reason?: string;
+}
+
+export interface PosCancelSaleResponse {
+    id: string;
+    tenantId: string;
+    locationId: string;
+    userId: string;
+    status: Extract<keyof typeof SaleStatus, 'CANCELLED'>;
+    restoredItems: number;
+    cancelledAt: string;
+}
+
 export interface PosSyncRequest {
     sales: PosSaleRequest[];
 }
@@ -118,6 +158,20 @@ export interface PosSyncSaleResult {
 export interface PosSyncResponse {
     ok: boolean;
     results: PosSyncSaleResult[];
+}
+
+export class PosCoreError extends Error {
+    code: string;
+    status: number;
+    details?: Record<string, unknown>;
+
+    constructor(code: string, message: string, status: number, details?: Record<string, unknown>) {
+        super(message);
+        this.name = 'PosCoreError';
+        this.code = code;
+        this.status = status;
+        this.details = details;
+    }
 }
 
 const roundCurrency = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
@@ -140,28 +194,118 @@ const toNumber = (value: Prisma.Decimal | number | string | null | undefined) =>
 
 const toDecimal = (value: number) => new Prisma.Decimal(roundCurrency(value).toFixed(2));
 
+const isRetryableTransactionError = (error: unknown) => {
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        return error.code === 'P2034';
+    }
+
+    if (error instanceof Error) {
+        const message = error.message.toLowerCase();
+        return message.includes('could not serialize access') || message.includes('deadlock detected');
+    }
+
+    return false;
+};
+
+const executeWithRetry = async <T>(operation: () => Promise<T>) => {
+    let attempt = 0;
+
+    while (attempt < MAX_TRANSACTION_RETRIES) {
+        try {
+            return await operation();
+        } catch (error) {
+            attempt += 1;
+
+            if (!isRetryableTransactionError(error) || attempt >= MAX_TRANSACTION_RETRIES) {
+                throw error;
+            }
+        }
+    }
+
+    throw new PosCoreError('TRANSACTION_FAILED', 'No fue posible completar la transacción del POS.', 409);
+};
+
 const normalizePaymentMethod = (value: string) => {
     const normalized = value?.toUpperCase();
     if (normalized && normalized in PaymentMethod) {
         return normalized as PosPaymentMethod;
     }
 
-    throw new Error('Metodo de pago invalido.');
+    throw new PosCoreError('INVALID_PAYMENT_METHOD', 'Metodo de pago invalido.', 400);
 };
 
 const requireRole = (ctx: VendixContext, allowedRoles: string[]) => {
     if (!hasAnyRole(ctx, allowedRoles)) {
-        throw new Error('No tienes permisos para operar el POS.');
+        throw new PosCoreError('FORBIDDEN', 'No tienes permisos para operar el POS.', 403);
     }
 };
 
 const resolveLocationId = (ctx: VendixContext, requestedLocationId?: string) => {
     const locationId = requestedLocationId ?? ctx.locationId;
     if (!locationId) {
-        throw new Error('locationId es obligatorio para el POS.');
+        throw new PosCoreError('INVALID_CONTEXT', 'locationId es obligatorio para el POS.', 400);
     }
 
     return locationId;
+};
+
+const createAuditLog = async (
+    tx: PosTransactionClient,
+    tenantId: string,
+    entity: string,
+    entityId: string,
+    action: string,
+    changes: Record<string, unknown>,
+) => {
+    await tx.auditLog.create({
+        data: {
+            tenantId,
+            entity,
+            entityId,
+            action,
+            changes: changes as Prisma.InputJsonValue,
+        },
+    });
+};
+
+const normalizeSaleItems = (items: PosSaleItemInput[]) => {
+    if (!Array.isArray(items) || items.length === 0) {
+        throw new PosCoreError('EMPTY_CART', 'El carrito esta vacio.', 400);
+    }
+
+    const mergedItems = new Map<string, number>();
+
+    for (const item of items) {
+        const quantity = Number(item?.quantity);
+        if (!item?.productId || !Number.isInteger(quantity) || quantity <= 0) {
+            throw new PosCoreError('INVALID_PAYLOAD', 'Los items enviados no son validos.', 400);
+        }
+
+        mergedItems.set(item.productId, (mergedItems.get(item.productId) ?? 0) + quantity);
+    }
+
+    return Array.from(mergedItems.entries()).map(([productId, quantity]) => ({ productId, quantity }));
+};
+
+const lockInventoryRows = async (
+    tx: PosTransactionClient,
+    tenantId: string,
+    locationId: string,
+    productIds: string[],
+) => {
+    if (productIds.length === 0) {
+        return [] as LockedInventoryRow[];
+    }
+
+    return tx.$queryRaw<LockedInventoryRow[]>(Prisma.sql`
+        SELECT id, "tenantId", "productId", "locationId", quantity, "minStock"
+        FROM "Inventory"
+        WHERE "tenantId" = ${tenantId}
+          AND "locationId" = ${locationId}
+          AND "productId" IN (${Prisma.join(productIds)})
+        ORDER BY "productId"
+        FOR UPDATE
+    `);
 };
 
 const serializeProduct = (product: {
@@ -193,6 +337,7 @@ const serializeProduct = (product: {
         locationId: inventory?.locationId ?? '',
         locationName: inventory?.location.name ?? 'Sin sucursal',
         stock: inventory?.quantity ?? 0,
+        minStock: inventory?.minStock ?? 0,
         isLowStock: inventory ? inventory.quantity <= inventory.minStock : true,
         lastUpdatedAt: product.updatedAt.toISOString(),
     };
@@ -218,7 +363,7 @@ const serializeSale = (sale: {
         price: Prisma.Decimal;
         product: { name: string; sku: string };
     }>;
-}, duplicate = false): PosSaleResponse => ({
+}, duplicate = false, remainingStockByProductId?: Map<string, number>): PosSaleResponse => ({
     id: sale.id,
     tenantId: sale.tenantId,
     locationId: sale.locationId,
@@ -240,6 +385,7 @@ const serializeSale = (sale: {
         quantity: item.quantity,
         unitPrice: toNumber(item.price),
         subtotal: roundCurrency(toNumber(item.price) * item.quantity),
+        remainingStock: remainingStockByProductId?.get(item.productId) ?? 0,
     })),
 });
 
@@ -259,6 +405,86 @@ const buildSearchScore = (product: PosProductResult, normalizedQuery: string) =>
     return 2;
 };
 
+const buildInventoryIssues = (
+    items: Array<{ productId: string; quantity: number }>,
+    productsById: Map<string, { id: string; name: string; sku: string; price: Prisma.Decimal }>,
+    inventoryByProductId: Map<string, LockedInventoryRow>,
+) => {
+    const issues: PosInventoryIssue[] = [];
+
+    for (const item of items) {
+        const product = productsById.get(item.productId);
+        const inventory = inventoryByProductId.get(item.productId);
+
+        if (!product) {
+            issues.push({
+                productId: item.productId,
+                requestedQuantity: item.quantity,
+                availableQuantity: 0,
+                reason: 'PRODUCT_NOT_FOUND',
+            });
+            continue;
+        }
+
+        if (!inventory) {
+            issues.push({
+                productId: item.productId,
+                name: product.name,
+                sku: product.sku,
+                requestedQuantity: item.quantity,
+                availableQuantity: 0,
+                reason: 'INVENTORY_NOT_FOUND',
+            });
+            continue;
+        }
+
+        if (inventory.quantity < item.quantity) {
+            issues.push({
+                productId: item.productId,
+                name: product.name,
+                sku: product.sku,
+                requestedQuantity: item.quantity,
+                availableQuantity: inventory.quantity,
+                reason: 'INSUFFICIENT_STOCK',
+            });
+        }
+    }
+
+    return issues;
+};
+
+const ensureSaleAccess = async (tx: PosTransactionClient, ctx: VendixContext, locationId: string) => {
+    const [location, user] = await Promise.all([
+        tx.location.findFirst({
+            where: {
+                id: locationId,
+                tenantId: ctx.tenantId,
+            },
+            select: {
+                id: true,
+            },
+        }),
+        tx.user.findFirst({
+            where: {
+                id: ctx.userId,
+                tenantId: ctx.tenantId,
+                isActive: true,
+            },
+            select: {
+                id: true,
+            },
+        }),
+    ]);
+
+    if (!location) {
+        throw new PosCoreError('LOCATION_NOT_FOUND', 'La sucursal seleccionada no existe para el tenant actual.', 404);
+    }
+
+    if (!user) {
+        throw new PosCoreError('USER_NOT_FOUND', 'El usuario no existe o esta inactivo para el tenant actual.', 404);
+    }
+};
+
 export const searchPosProducts = async (
     ctx: VendixContext,
     params: { query?: string; locationId?: string; limit?: number },
@@ -276,13 +502,13 @@ export const searchPosProducts = async (
             isActive: true,
             ...(query
                 ? {
-                      OR: [
-                          { name: { contains: query, mode: 'insensitive' } },
-                          { sku: { contains: query, mode: 'insensitive' } },
-                          { barcode: { contains: query, mode: 'insensitive' } },
-                          { qrCode: { contains: query, mode: 'insensitive' } },
-                      ],
-                  }
+                    OR: [
+                        { name: { contains: query, mode: 'insensitive' } },
+                        { sku: { contains: query, mode: 'insensitive' } },
+                        { barcode: { contains: query, mode: 'insensitive' } },
+                        { qrCode: { contains: query, mode: 'insensitive' } },
+                    ],
+                }
                 : {}),
         },
         include: {
@@ -310,15 +536,15 @@ export const searchPosProducts = async (
     const mapped = products.map(serializeProduct);
     const data = query
         ? mapped
-              .sort((left, right) => {
-                  const leftScore = buildSearchScore(left, normalizedQuery);
-                  const rightScore = buildSearchScore(right, normalizedQuery);
-                  if (leftScore !== rightScore) {
-                      return leftScore - rightScore;
-                  }
-                  return right.stock - left.stock;
-              })
-              .slice(0, limit)
+            .sort((left, right) => {
+                const leftScore = buildSearchScore(left, normalizedQuery);
+                const rightScore = buildSearchScore(right, normalizedQuery);
+                if (leftScore !== rightScore) {
+                    return leftScore - rightScore;
+                }
+                return right.stock - left.stock;
+            })
+            .slice(0, limit)
         : mapped;
 
     return {
@@ -340,7 +566,7 @@ export const validatePosStock = async (
     const locationId = resolveLocationId(ctx, payload.locationId);
 
     if (!Array.isArray(payload.items) || payload.items.length === 0) {
-        throw new Error('Debes enviar al menos un item para validar stock.');
+        throw new PosCoreError('INVALID_PAYLOAD', 'Debes enviar al menos un item para validar stock.', 400);
     }
 
     const requestedItems = payload.items
@@ -351,7 +577,7 @@ export const validatePosStock = async (
         .filter((item) => item.productId && Number.isFinite(item.quantity) && item.quantity > 0);
 
     if (requestedItems.length === 0) {
-        throw new Error('Los items enviados no son validos.');
+        throw new PosCoreError('INVALID_PAYLOAD', 'Los items enviados no son validos.', 400);
     }
 
     const inventories = await prisma.inventory.findMany({
@@ -425,189 +651,302 @@ export const createPosSale = async (ctx: VendixContext, payload: PosSaleRequest)
     const locationId = resolveLocationId(ctx, payload.locationId);
     const paymentMethod = normalizePaymentMethod(payload.paymentMethod);
     const taxRate = typeof payload.taxRate === 'number' ? Math.max(payload.taxRate, 0) : DEFAULT_TAX_RATE;
-
-    if (!Array.isArray(payload.items) || payload.items.length === 0) {
-        throw new Error('El carrito esta vacio.');
-    }
+    const normalizedItems = normalizeSaleItems(payload.items);
 
     const existingSale = await findExistingSaleByClientReference(ctx, payload.clientReference);
     if (existingSale) {
         return serializeSale(existingSale, true);
     }
 
-    const consolidatedItems = Array.from(
-        payload.items.reduce((map, current) => {
-            const quantity = Number(current.quantity);
-            if (!current.productId || !Number.isFinite(quantity) || quantity <= 0) {
-                return map;
-            }
+    try {
+        return await executeWithRetry(async () => {
+            return prisma.$transaction(async (tx) => {
+                await ensureSaleAccess(tx, ctx, locationId);
 
-            const previous = map.get(current.productId) ?? 0;
-            map.set(current.productId, previous + Math.trunc(quantity));
-            return map;
-        }, new Map<string, number>()),
-    ).map(([productId, quantity]) => ({ productId, quantity }));
+                const productIds = normalizedItems.map((item) => item.productId);
+                const [products, lockedInventories] = await Promise.all([
+                    tx.product.findMany({
+                        where: {
+                            tenantId: ctx.tenantId,
+                            deletedAt: null,
+                            isActive: true,
+                            id: {
+                                in: productIds,
+                            },
+                        },
+                        select: {
+                            id: true,
+                            name: true,
+                            sku: true,
+                            price: true,
+                        },
+                    }),
+                    lockInventoryRows(tx, ctx.tenantId, locationId, productIds),
+                ]);
 
-    if (consolidatedItems.length === 0) {
-        throw new Error('No hay items validos para procesar la venta.');
-    }
+                const productsById = new Map(products.map((product) => [product.id, product]));
+                const inventoryByProductId = new Map(lockedInventories.map((inventory) => [inventory.productId, inventory]));
+                const issues = buildInventoryIssues(normalizedItems, productsById, inventoryByProductId);
 
-    const result = await prisma.$transaction(async (tx) => {
-        const [location, products, inventories] = await Promise.all([
-            tx.location.findFirst({
-                where: {
-                    id: locationId,
-                    tenantId: ctx.tenantId,
-                },
-            }),
-            tx.product.findMany({
-                where: {
-                    tenantId: ctx.tenantId,
-                    deletedAt: null,
-                    isActive: true,
-                    id: {
-                        in: consolidatedItems.map((item) => item.productId),
-                    },
-                },
-            }),
-            tx.inventory.findMany({
-                where: {
-                    tenantId: ctx.tenantId,
-                    locationId,
-                    productId: {
-                        in: consolidatedItems.map((item) => item.productId),
-                    },
-                },
-            }),
-        ]);
+                if (issues.length > 0) {
+                    throw new PosCoreError('INSUFFICIENT_STOCK', 'Uno o mas productos no tienen stock suficiente.', 409, {
+                        issues,
+                    });
+                }
 
-        if (!location) {
-            throw new Error('La sucursal seleccionada no existe para el tenant actual.');
-        }
+                const saleItems = normalizedItems.map((item) => {
+                    const product = productsById.get(item.productId);
+                    const inventory = inventoryByProductId.get(item.productId);
 
-        const productMap = new Map(products.map((product) => [product.id, product]));
-        const inventoryMap = new Map(inventories.map((inventory) => [inventory.productId, inventory]));
+                    if (!product || !inventory) {
+                        throw new PosCoreError('INVALID_STATE', 'El inventario bloqueado no coincide con el catalogo.', 500);
+                    }
 
-        for (const item of consolidatedItems) {
-            const product = productMap.get(item.productId);
-            if (!product) {
-                throw new Error(`Producto no encontrado: ${item.productId}.`);
-            }
-
-            const inventory = inventoryMap.get(item.productId);
-            if (!inventory || inventory.quantity < item.quantity) {
-                throw new Error(`Stock insuficiente para ${product.name}.`);
-            }
-        }
-
-        const subtotal = roundCurrency(
-            consolidatedItems.reduce((accumulator, item) => {
-                const product = productMap.get(item.productId);
-                return accumulator + toNumber(product?.price) * item.quantity;
-            }, 0),
-        );
-        const tax = roundCurrency(subtotal * taxRate);
-        const total = roundCurrency(subtotal + tax);
-
-        const sale = await tx.sale.create({
-            data: {
-                tenantId: ctx.tenantId,
-                locationId,
-                userId: ctx.userId,
-                status: 'COMPLETED',
-                subtotal: toDecimal(subtotal),
-                tax: toDecimal(tax),
-                total: toDecimal(total),
-                paymentMethod,
-                clientReference: payload.clientReference,
-                notes: payload.notes,
-                metadata: {
-                    source: payload.offline ? 'offline-sync' : 'pos-live',
-                    ...(payload.metadata ?? {}),
-                },
-                syncedAt: payload.offline ? new Date() : null,
-                items: {
-                    create: consolidatedItems.map((item) => ({
+                    const unitPrice = toNumber(product.price);
+                    return {
                         productId: item.productId,
+                        name: product.name,
+                        sku: product.sku,
                         quantity: item.quantity,
-                        price: toDecimal(toNumber(productMap.get(item.productId)?.price)),
-                    })),
-                },
-            },
-            include: {
-                items: {
+                        unitPrice,
+                        subtotal: roundCurrency(unitPrice * item.quantity),
+                        remainingStock: inventory.quantity - item.quantity,
+                    };
+                });
+
+                const subtotal = roundCurrency(saleItems.reduce((total, item) => total + item.subtotal, 0));
+                const tax = roundCurrency(subtotal * taxRate);
+                const total = roundCurrency(subtotal + tax);
+                const remainingStockByProductId = new Map(saleItems.map((item) => [item.productId, item.remainingStock]));
+
+                const sale = await tx.sale.create({
+                    data: {
+                        tenantId: ctx.tenantId,
+                        locationId,
+                        userId: ctx.userId,
+                        status: 'COMPLETED',
+                        subtotal: toDecimal(subtotal),
+                        tax: toDecimal(tax),
+                        total: toDecimal(total),
+                        paymentMethod,
+                        clientReference: payload.clientReference,
+                        notes: payload.notes,
+                        metadata: {
+                            source: payload.offline ? 'offline-sync' : 'pos-live',
+                            ...(payload.metadata ?? {}),
+                        } as Prisma.InputJsonValue,
+                        syncedAt: payload.offline ? new Date() : null,
+                        items: {
+                            create: saleItems.map((item) => ({
+                                productId: item.productId,
+                                quantity: item.quantity,
+                                price: toDecimal(item.unitPrice),
+                            })),
+                        },
+                    },
                     include: {
-                        product: {
-                            select: {
-                                name: true,
-                                sku: true,
+                        items: {
+                            include: {
+                                product: {
+                                    select: {
+                                        name: true,
+                                        sku: true,
+                                    },
+                                },
                             },
                         },
                     },
-                },
-            },
-        });
+                });
 
-        for (const item of consolidatedItems) {
-            const inventory = inventoryMap.get(item.productId);
-            if (!inventory) {
-                continue;
-            }
+                await Promise.all(
+                    saleItems.map((item) => {
+                        const inventory = inventoryByProductId.get(item.productId);
 
-            await tx.inventory.update({
-                where: {
-                    id: inventory.id,
-                },
-                data: {
-                    quantity: inventory.quantity - item.quantity,
-                },
-            });
-        }
+                        if (!inventory) {
+                            throw new PosCoreError('INVALID_STATE', 'No se encontro el inventario bloqueado para actualizar.', 500);
+                        }
 
-        await tx.inventoryMovement.createMany({
-            data: consolidatedItems.map((item) => ({
-                tenantId: ctx.tenantId,
-                productId: item.productId,
-                locationId,
-                type: 'OUT',
-                quantity: item.quantity,
-                reference: sale.id,
-                notes: payload.notes,
-                createdBy: ctx.userId,
-            })),
-        });
+                        return tx.inventory.update({
+                            where: {
+                                id: inventory.id,
+                            },
+                            data: {
+                                quantity: item.remainingStock,
+                            },
+                        });
+                    }),
+                );
 
-        await tx.auditLog.create({
-            data: {
-                tenantId: ctx.tenantId,
-                entity: 'Sale',
-                entityId: sale.id,
-                action: 'pos.sale.completed',
-                changes: {
+                await tx.inventoryMovement.createMany({
+                    data: saleItems.map((item) => ({
+                        tenantId: ctx.tenantId,
+                        productId: item.productId,
+                        locationId,
+                        type: 'OUT',
+                        quantity: item.quantity,
+                        reference: sale.id,
+                        notes: payload.notes,
+                        createdBy: ctx.userId,
+                    })),
+                });
+
+                await createAuditLog(tx, ctx.tenantId, 'Sale', sale.id, 'pos.sale.completed', {
                     userId: ctx.userId,
                     locationId,
                     paymentMethod,
                     subtotal,
                     tax,
                     total,
-                    itemCount: consolidatedItems.length,
+                    itemCount: saleItems.length,
                     clientReference: payload.clientReference,
                     offline: payload.offline ?? false,
-                },
-            },
+                });
+
+                return serializeSale(sale, false, remainingStockByProductId);
+            }, POS_TRANSACTION_OPTIONS);
         });
+    } catch (error) {
+        if (
+            error instanceof Prisma.PrismaClientKnownRequestError &&
+            error.code === 'P2002' &&
+            payload.clientReference
+        ) {
+            const duplicatedSale = await findExistingSaleByClientReference(ctx, payload.clientReference);
+            if (duplicatedSale) {
+                return serializeSale(duplicatedSale, true);
+            }
+        }
 
-        return sale;
+        throw error;
+    }
+};
+
+export const cancelPosSale = async (
+    ctx: VendixContext,
+    saleId: string,
+    payload?: PosCancelSaleRequest,
+): Promise<PosCancelSaleResponse> => {
+    requireRole(ctx, POS_CANCEL_ROLES);
+
+    if (!saleId) {
+        throw new PosCoreError('INVALID_PAYLOAD', 'saleId es obligatorio para cancelar la venta.', 400);
+    }
+
+    return executeWithRetry(async () => {
+        return prisma.$transaction(async (tx) => {
+            const sales = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+                SELECT id
+                FROM "Sale"
+                WHERE id = ${saleId}
+                  AND "tenantId" = ${ctx.tenantId}
+                FOR UPDATE
+            `);
+
+            if (sales.length === 0) {
+                throw new PosCoreError('SALE_NOT_FOUND', 'La venta no existe para el tenant actual.', 404);
+            }
+
+            const sale = await tx.sale.findFirst({
+                where: {
+                    id: saleId,
+                    tenantId: ctx.tenantId,
+                },
+                include: {
+                    items: true,
+                },
+            });
+
+            if (!sale) {
+                throw new PosCoreError('SALE_NOT_FOUND', 'La venta no existe para el tenant actual.', 404);
+            }
+
+            if (sale.status === 'CANCELLED') {
+                throw new PosCoreError('SALE_ALREADY_CANCELLED', 'La venta ya fue cancelada previamente.', 409);
+            }
+
+            await ensureSaleAccess(tx, ctx, sale.locationId);
+
+            const productIds = sale.items.map((item) => item.productId);
+            const lockedInventories = await lockInventoryRows(tx, ctx.tenantId, sale.locationId, productIds);
+            const inventoryByProductId = new Map(lockedInventories.map((inventory) => [inventory.productId, inventory]));
+
+            await Promise.all(
+                sale.items.map(async (item) => {
+                    const inventory = inventoryByProductId.get(item.productId);
+
+                    if (inventory) {
+                        await tx.inventory.update({
+                            where: {
+                                id: inventory.id,
+                            },
+                            data: {
+                                quantity: inventory.quantity + item.quantity,
+                            },
+                        });
+                        return;
+                    }
+
+                    await tx.inventory.create({
+                        data: {
+                            tenantId: ctx.tenantId,
+                            productId: item.productId,
+                            locationId: sale.locationId,
+                            quantity: item.quantity,
+                            minStock: 0,
+                        },
+                    });
+                }),
+            );
+
+            await tx.sale.update({
+                where: {
+                    id: sale.id,
+                },
+                data: {
+                    status: 'CANCELLED',
+                },
+            });
+
+            await tx.inventoryMovement.createMany({
+                data: sale.items.map((item) => ({
+                    tenantId: ctx.tenantId,
+                    productId: item.productId,
+                    locationId: sale.locationId,
+                    type: 'IN',
+                    quantity: item.quantity,
+                    reference: sale.id,
+                    notes: payload?.reason ?? 'Venta cancelada',
+                    createdBy: ctx.userId,
+                })),
+            });
+
+            await createAuditLog(tx, ctx.tenantId, 'Sale', sale.id, 'pos.sale.cancelled', {
+                userId: ctx.userId,
+                reason: payload?.reason,
+                restoredItems: sale.items.map((item) => ({
+                    productId: item.productId,
+                    quantity: item.quantity,
+                })),
+            });
+
+            return {
+                id: sale.id,
+                tenantId: ctx.tenantId,
+                locationId: sale.locationId,
+                userId: ctx.userId,
+                status: 'CANCELLED',
+                restoredItems: sale.items.length,
+                cancelledAt: new Date().toISOString(),
+            };
+        }, POS_TRANSACTION_OPTIONS);
     });
-
-    return serializeSale(result);
 };
 
 export const syncOfflineSales = async (ctx: VendixContext, payload: PosSyncRequest): Promise<PosSyncResponse> => {
     requireRole(ctx, POS_WRITE_ROLES);
 
     if (!Array.isArray(payload.sales) || payload.sales.length === 0) {
-        throw new Error('No hay ventas offline para sincronizar.');
+        throw new PosCoreError('INVALID_PAYLOAD', 'No hay ventas offline para sincronizar.', 400);
     }
 
     const results: PosSyncSaleResult[] = [];

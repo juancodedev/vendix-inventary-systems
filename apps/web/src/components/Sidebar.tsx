@@ -46,10 +46,8 @@ export default function Sidebar() {
 
                 <div className="pt-8">
                     <p className="text-xs font-bold text-slate-400 uppercase tracking-widest px-2 mb-2">Punto de Venta</p>
-                    <a
-                        href="http://localhost:3001"
-                        target="_blank"
-                        rel="noopener noreferrer"
+                    <Link
+                        href="/pos"
                         className="flex items-center justify-between px-3 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition shadow-lg shadow-indigo-100 group"
                     >
                         <div className="flex items-center space-x-3">
@@ -57,7 +55,7 @@ export default function Sidebar() {
                             <span className="font-bold">Abrir POS</span>
                         </div>
                         <ExternalLink size={14} className="opacity-50 group-hover:opacity-100" />
-                    </a>
+                    </Link>
                 </div>
             </nav>
 
