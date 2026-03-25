@@ -12,7 +12,7 @@ COPY . .
 RUN pnpm install --no-frozen-lockfile
 
 # Build the app
-RUN pnpm run build --filter=pos
+RUN pnpm --filter pos build
 
 # Production environment
 FROM nginx:stable-alpine

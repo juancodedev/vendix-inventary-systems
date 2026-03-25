@@ -12,7 +12,7 @@ COPY . .
 RUN pnpm install --no-frozen-lockfile
 
 # Build the web application
-RUN pnpm run build --filter=web
+RUN pnpm --filter web build
 
 # Final production stage
 FROM node:18-alpine AS runner
