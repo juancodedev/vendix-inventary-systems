@@ -67,3 +67,191 @@ export interface SaleItem {
   unit_price: number;
   subtotal: number;
 }
+
+export type InventoryMovementType = 'IN' | 'OUT' | 'TRANSFER' | 'ADJUSTMENT';
+
+export interface InventoryLocationStock {
+  locationId: ID;
+  locationName: string;
+  locationType: string;
+  quantity: number;
+  minStock: number;
+  isLowStock: boolean;
+}
+
+export interface InventoryMovementRecord {
+  id: ID;
+  productId: ID;
+  productName: string;
+  sku: string;
+  type: InventoryMovementType;
+  quantity: number;
+  reference?: string;
+  notes?: string;
+  locationId?: ID;
+  locationName?: string;
+  sourceLocationId?: ID;
+  sourceLocationName?: string;
+  destinationLocationId?: ID;
+  destinationLocationName?: string;
+  createdBy?: ID;
+  createdAt: string;
+}
+
+export interface InventoryListItem {
+  id: ID;
+  name: string;
+  sku: string;
+  category?: string;
+  price: number;
+  barcode?: string;
+  qrCode?: string;
+  stockTotal: number;
+  minStock: number;
+  isLowStock: boolean;
+  stockByLocation: InventoryLocationStock[];
+}
+
+export interface InventoryProductDetail extends InventoryListItem {
+  movements: InventoryMovementRecord[];
+}
+
+export interface InventoryAlert {
+  id: ID;
+  productId: ID;
+  productName: string;
+  sku: string;
+  locationId: ID;
+  locationName: string;
+  quantity: number;
+  minStock: number;
+  severity: 'warning' | 'critical';
+}
+
+export interface InventoryPagination {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+}
+
+export interface InventoryListResponse {
+  data: InventoryListItem[];
+  pagination: InventoryPagination;
+}
+
+export interface InventoryMovementInput {
+  productId: ID;
+  locationId: ID;
+  type: Exclude<InventoryMovementType, 'TRANSFER'>;
+  quantity: number;
+  reference?: string;
+  notes?: string;
+  minStock?: number;
+}
+
+export interface InventoryTransferInput {
+  productId: ID;
+  sourceLocationId: ID;
+  destinationLocationId: ID;
+  quantity: number;
+  reference?: string;
+  notes?: string;
+}
+
+export interface InventoryBatchUpdateInput {
+  productId?: ID;
+  sku?: string;
+  locationId?: ID;
+  quantity?: number;
+  minStock?: number;
+  price?: number;
+  category?: string;
+}
+
+export interface InventoryBatchRequest {
+  action: 'import' | 'export' | 'update';
+  csvContent?: string;
+  items?: InventoryBatchUpdateInput[];
+}
+
+export type PosPaymentMethod = 'CASH' | 'TRANSFER' | 'CARD' | 'OTHER';
+export type PosSaleStatus = 'PENDING' | 'COMPLETED' | 'CANCELLED';
+
+export interface PosSaleContext {
+  tenantId: ID;
+  locationId: ID;
+  userId: ID;
+}
+
+export interface PosSaleItemInput {
+  productId: ID;
+  quantity: number;
+}
+
+export interface PosSaleRequest {
+  items: PosSaleItemInput[];
+  paymentMethod: PosPaymentMethod;
+  expectedTotal?: number;
+  notes?: string;
+}
+
+export interface PosInventoryIssue {
+  productId: ID;
+  productName?: string;
+  sku?: string;
+  requestedQuantity: number;
+  availableQuantity: number;
+  reason: 'PRODUCT_NOT_FOUND' | 'INVENTORY_NOT_FOUND' | 'INSUFFICIENT_STOCK';
+}
+
+export interface PosSaleItemSummary {
+  productId: ID;
+  productName: string;
+  sku: string;
+  quantity: number;
+  unitPrice: number;
+  lineTotal: number;
+  remainingStock: number;
+}
+
+export interface PosSaleResponse {
+  saleId: ID;
+  tenantId: ID;
+  locationId: ID;
+  userId: ID;
+  status: PosSaleStatus;
+  paymentMethod: PosPaymentMethod;
+  total: number;
+  items: PosSaleItemSummary[];
+  createdAt: string;
+}
+
+export interface PosSaleCancellationResponse {
+  saleId: ID;
+  tenantId: ID;
+  locationId: ID;
+  status: Extract<PosSaleStatus, 'CANCELLED'>;
+  restoredItems: number;
+  cancelledAt: string;
+}
+
+export interface PosCatalogItem {
+  productId: ID;
+  name: string;
+  sku: string;
+  category?: string;
+  price: number;
+  barcode?: string;
+  qrCode?: string;
+  availableStock: number;
+  minStock: number;
+  isLowStock: boolean;
+}
+
+export interface PosCatalogResponse {
+  data: PosCatalogItem[];
+  locationId: ID;
+  total: number;
+  generatedAt: string;
+}

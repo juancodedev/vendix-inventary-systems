@@ -1,7 +1,12 @@
 import React from 'react';
 import { TrendingUp, Users, ShoppingBag, CreditCard } from 'lucide-react';
+import Link from 'next/link';
+import { formatCurrency, getInventoryMetrics, getLowStockAlerts } from '@/lib/inventory';
 
 export default function DashboardPage() {
+    const inventoryMetrics = getInventoryMetrics();
+    const lowStockAlerts = getLowStockAlerts().slice(0, 4);
+
     return (
         <div className="space-y-8">
             <div className="flex items-end justify-between">
@@ -44,6 +49,53 @@ export default function DashboardPage() {
                     icon={<TrendingUp className="text-orange-600" />}
                     color="bg-orange-50"
                 />
+            </div>
+
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+                <div className="rounded-3xl border border-amber-200 bg-amber-50 p-6 shadow-lg shadow-amber-100/50 lg:col-span-2">
+                    <div className="flex items-center justify-between gap-4">
+                        <div>
+                            <p className="text-xs font-black uppercase tracking-[0.2em] text-amber-700/70">Alertas inteligentes</p>
+                            <h3 className="mt-2 text-2xl font-extrabold text-slate-900">Productos por debajo del minimo</h3>
+                        </div>
+                        <Link href="/dashboard/inventory" className="rounded-full bg-slate-900 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-white transition hover:bg-slate-700">
+                            Abrir inventario
+                        </Link>
+                    </div>
+
+                    <div className="mt-5 grid gap-4 md:grid-cols-2">
+                        {lowStockAlerts.map((alert) => (
+                            <div key={alert.id} className={`rounded-3xl border px-4 py-4 ${alert.severity === 'critical' ? 'border-rose-200 bg-rose-50' : 'border-white/70 bg-white/70'}`}>
+                                <p className="font-extrabold text-slate-900">{alert.productName}</p>
+                                <p className="mt-1 text-xs font-medium uppercase tracking-[0.16em] text-slate-500">{alert.locationName} · {alert.sku}</p>
+                                <p className="mt-3 text-sm font-bold text-slate-700">Disponible {alert.quantity} · Minimo {alert.minStock}</p>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="rounded-3xl border border-slate-100 bg-white p-6 shadow-xl shadow-slate-200/50">
+                    <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Estado de inventario</p>
+                    <h3 className="mt-2 text-2xl font-extrabold text-slate-900">Visibilidad operativa</h3>
+                    <div className="mt-6 space-y-4 text-sm">
+                        <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
+                            <span className="font-semibold text-slate-500">SKUs activos</span>
+                            <span className="font-black text-slate-900">{inventoryMetrics.skuCount}</span>
+                        </div>
+                        <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
+                            <span className="font-semibold text-slate-500">Unidades</span>
+                            <span className="font-black text-slate-900">{inventoryMetrics.totalUnits}</span>
+                        </div>
+                        <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
+                            <span className="font-semibold text-slate-500">Alertas criticas</span>
+                            <span className="font-black text-rose-700">{inventoryMetrics.criticalCount}</span>
+                        </div>
+                        <div className="flex items-center justify-between rounded-2xl bg-slate-900 px-4 py-3 text-white">
+                            <span className="font-semibold text-slate-200">Valor estimado</span>
+                            <span className="font-black">{formatCurrency(inventoryMetrics.inventoryValue)}</span>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             {/* Placeholder for charts/tables */}

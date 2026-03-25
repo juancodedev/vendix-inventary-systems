@@ -1,4 +1,18 @@
 {
-  "/not-found": "app/not-found.js",
-  "/page": "app/page.js"
+  "/_not-found/page": "app/_not-found/page.js",
+  "/api/pos/sync/route": "app/api/pos/sync/route.js",
+  "/api/pos/validate-stock/route": "app/api/pos/validate-stock/route.js",
+  "/api/pos/sale/route": "app/api/pos/sale/route.js",
+  "/api/pos/products/route": "app/api/pos/products/route.js",
+  "/page": "app/page.js",
+  "/login/page": "app/login/page.js",
+  "/signup/page": "app/signup/page.js",
+  "/dashboard/inventory/[id]/page": "app/dashboard/inventory/[id]/page.js",
+  "/dashboard/inventory/movements/page": "app/dashboard/inventory/movements/page.js",
+  "/dashboard/inventory/transfer/page": "app/dashboard/inventory/transfer/page.js",
+  "/dashboard/inventory/page": "app/dashboard/inventory/page.js",
+  "/dashboard/page": "app/dashboard/page.js",
+  "/dashboard/pos/page": "app/dashboard/pos/page.js",
+  "/dashboard/profile/page": "app/dashboard/profile/page.js",
+  "/dashboard/settings/page": "app/dashboard/settings/page.js"
 }

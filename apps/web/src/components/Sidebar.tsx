@@ -15,6 +15,8 @@ export default function Sidebar() {
     const menuItems = [
         { icon: <LayoutDashboard size={20} />, label: 'Dashboard', href: '/dashboard' },
         { icon: <Package size={20} />, label: 'Inventario', href: '/dashboard/inventory' },
+        { icon: <ShoppingCart size={20} />, label: 'Movimientos', href: '/dashboard/inventory/movements' },
+        { icon: <Store size={20} />, label: 'Transferencias', href: '/dashboard/inventory/transfer' },
         { icon: <Users size={20} />, label: 'Usuarios', href: '/dashboard/users' },
         { icon: <Store size={20} />, label: 'Mi Tienda', href: '/dashboard/settings' },
         { icon: <Settings size={20} />, label: 'Configuración', href: '/dashboard/profile' },
