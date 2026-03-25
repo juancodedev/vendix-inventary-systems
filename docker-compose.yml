@@ -33,7 +33,7 @@ services:
       context: .
       dockerfile: apps/pos/Dockerfile
     ports:
-      - "3001:3001"
+      - "3001:80"
 
   auth-service:
     build:
