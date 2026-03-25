@@ -2,6 +2,9 @@ FROM node:18-alpine AS builder
 
 WORKDIR /app
 
+# Install compatibility libraries
+RUN apk add --no-cache libc6-compat openssl
+
 # Enable corepack and use specific pnpm version
 RUN corepack enable && corepack prepare pnpm@10.32.1 --activate
 

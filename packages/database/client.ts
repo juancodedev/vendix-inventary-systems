@@ -15,3 +15,15 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 export * from '@prisma/client';
+
+// Explicit exports for ESM compatibility
+export {
+    BillingInterval,
+    SubscriptionStatus,
+    InvoiceStatus,
+    RoleType,
+    LocationType,
+    MovementType,
+    SaleStatus,
+    PaymentMethod
+} from '@prisma/client';

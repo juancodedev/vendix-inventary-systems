@@ -102,73 +102,73 @@ const defaultPlans: Array<{
     features: Record<string, boolean>;
     limits: Record<string, number | null>;
 }> = [
-    {
-        code: 'FREE',
-        name: 'Free',
-        description: 'Perfecto para comenzar',
-        price: '0',
-        currency: 'USD',
-        interval: BillingInterval.MONTHLY,
-        displayOrder: 1,
-        features: {
-            pos: false,
-            pos_offline: false,
-            analytics_basic: false,
-            analytics_advanced: false,
-            multiuser: false,
-            priority_support: false,
+        {
+            code: 'FREE',
+            name: 'Free',
+            description: 'Perfecto para comenzar',
+            price: '0',
+            currency: 'USD',
+            interval: BillingInterval.MONTHLY,
+            displayOrder: 1,
+            features: {
+                pos: false,
+                pos_offline: false,
+                analytics_basic: false,
+                analytics_advanced: false,
+                multiuser: false,
+                priority_support: false,
+            },
+            limits: {
+                products: 50,
+                locations: 1,
+                users: 1,
+            },
         },
-        limits: {
-            products: 50,
-            locations: 1,
-            users: 1,
+        {
+            code: 'BASIC',
+            name: 'Basic',
+            description: 'Escala tus operaciones con POS',
+            price: '29',
+            currency: 'USD',
+            interval: BillingInterval.MONTHLY,
+            displayOrder: 2,
+            features: {
+                pos: true,
+                pos_offline: false,
+                analytics_basic: true,
+                analytics_advanced: false,
+                multiuser: false,
+                priority_support: false,
+            },
+            limits: {
+                products: 500,
+                locations: 3,
+                users: 5,
+            },
         },
-    },
-    {
-        code: 'BASIC',
-        name: 'Basic',
-        description: 'Escala tus operaciones con POS',
-        price: '29',
-        currency: 'USD',
-        interval: BillingInterval.MONTHLY,
-        displayOrder: 2,
-        features: {
-            pos: true,
-            pos_offline: false,
-            analytics_basic: true,
-            analytics_advanced: false,
-            multiuser: false,
-            priority_support: false,
+        {
+            code: 'PRO',
+            name: 'Pro',
+            description: 'Todo ilimitado con analytics avanzados',
+            price: '99',
+            currency: 'USD',
+            interval: BillingInterval.MONTHLY,
+            displayOrder: 3,
+            features: {
+                pos: true,
+                pos_offline: true,
+                analytics_basic: true,
+                analytics_advanced: true,
+                multiuser: true,
+                priority_support: true,
+            },
+            limits: {
+                products: null,
+                locations: null,
+                users: null,
+            },
         },
-        limits: {
-            products: 500,
-            locations: 3,
-            users: 5,
-        },
-    },
-    {
-        code: 'PRO',
-        name: 'Pro',
-        description: 'Todo ilimitado con analytics avanzados',
-        price: '99',
-        currency: 'USD',
-        interval: BillingInterval.MONTHLY,
-        displayOrder: 3,
-        features: {
-            pos: true,
-            pos_offline: true,
-            analytics_basic: true,
-            analytics_advanced: true,
-            multiuser: true,
-            priority_support: true,
-        },
-        limits: {
-            products: null,
-            locations: null,
-            users: null,
-        },
-    },
-];
+    ];
 
 const getStripe = () => {
     const secret = process.env.STRIPE_SECRET_KEY;
@@ -967,7 +967,7 @@ export const runBillingGuards = async (input: {
                     'USAGE_LIMIT_REACHED',
                     `Se alcanzo el limite de ${check.metric} para tu plan actual.`,
                     403,
-                    result,
+                    { ...result },
                 );
             }
         }
