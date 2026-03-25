@@ -2,7 +2,10 @@ node_modules
 .next
 dist
 .turbo
-.git
+build
+coverage
+public/build
+public/dist
 *.log
 .env*
 .DS_Store
@@ -10,8 +13,5 @@ dist
 .idea
 *.swp
 *.swo
-coverage
-out
-build
 next-env.d.ts
 *.tsbuildinfo

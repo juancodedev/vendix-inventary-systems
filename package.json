@@ -3,7 +3,9 @@
   "private": true,
   "scripts": {
     "dev": "turbo run dev",
-    "build": "turbo run build",
+    "build": "rm -rf apps/web/.next && pnpm -C apps/web build",
+    "build:ci": "rm -rf apps/web/.next && pnpm -C apps/web build",
+    "build:all": "turbo run build",
     "lint": "turbo run lint",
     "clean": "rm -rf node_modules apps/*/node_modules services/*/node_modules packages/*/node_modules"
   },
