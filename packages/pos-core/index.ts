@@ -1,5 +1,6 @@
 import { prisma, Prisma, PaymentMethod, SaleStatus } from '@vendix/database';
 import { hasAnyRole, type VendixContext } from '@vendix/utils';
+import { assertTenantCanPerformCriticalAction, hasFeature } from '@vendix/billing-core';
 
 const POS_READ_ROLES = ['ADMIN', 'SELLER', 'POS'];
 const POS_WRITE_ROLES = ['ADMIN', 'SELLER', 'POS'];
@@ -648,6 +649,20 @@ const findExistingSaleByClientReference = async (ctx: VendixContext, clientRefer
 
 export const createPosSale = async (ctx: VendixContext, payload: PosSaleRequest): Promise<PosSaleResponse> => {
     requireRole(ctx, POS_WRITE_ROLES);
+    await assertTenantCanPerformCriticalAction(ctx.tenantId);
+
+    const posEnabled = await hasFeature(ctx.tenantId, 'pos');
+    if (!posEnabled) {
+        throw new PosCoreError('FEATURE_NOT_AVAILABLE', 'Tu plan no incluye acceso a POS.', 403);
+    }
+
+    if (payload.offline) {
+        const offlineEnabled = await hasFeature(ctx.tenantId, 'pos_offline');
+        if (!offlineEnabled) {
+            throw new PosCoreError('FEATURE_NOT_AVAILABLE', 'POS offline solo esta disponible en plan PRO.', 403);
+        }
+    }
+
     const locationId = resolveLocationId(ctx, payload.locationId);
     const paymentMethod = normalizePaymentMethod(payload.paymentMethod);
     const taxRate = typeof payload.taxRate === 'number' ? Math.max(payload.taxRate, 0) : DEFAULT_TAX_RATE;

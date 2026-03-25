@@ -6,6 +6,7 @@
     "main": "index.ts",
     "types": "index.ts",
     "dependencies": {
+        "@vendix/billing-core": "file:../billing-core",
         "@vendix/database": "file:../database",
         "@vendix/utils": "file:../utils"
     }
