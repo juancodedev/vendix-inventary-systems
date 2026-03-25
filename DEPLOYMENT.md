@@ -46,6 +46,9 @@ CMD ["npm", "start"]
 
 The billing module uses Stripe Checkout + Webhooks and requires these steps in every environment.
 
+Detailed release checklist:
+- See `BILLING_RELEASE_CHECKLIST.md`
+
 1. Create Stripe Prices for `BASIC` and `PRO` and persist each `price_id` into `Plan.stripePriceId`.
 2. Configure webhook endpoint in Stripe Dashboard to:
 `https://<your-domain>/api/webhooks/stripe`
