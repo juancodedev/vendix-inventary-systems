@@ -9,7 +9,7 @@
         "@hono/node-server": "^1.13.8",
         "@vendix/pos-core": "file:../../packages/pos-core",
         "@vendix/utils": "file:../../packages/utils",
-        "hono": "^4.0.0",
+        "hono": "^4.12.12",
         "tsx": "^4.7.1"
     }
 }
