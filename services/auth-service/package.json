@@ -6,7 +6,7 @@
         "start": "tsx index.ts"
     },
     "dependencies": {
-        "hono": "^4.0.0",
+        "hono": "^4.12.14",
         "tsx": "^4.7.1",
         "@vendix/billing-core": "file:../../packages/billing-core",
         "@vendix/database": "file:../../packages/database",
