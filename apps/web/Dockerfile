@@ -24,7 +24,7 @@ RUN pnpm --filter web build
 FROM node:18-alpine AS runner
 WORKDIR /app
 
-# Install compatibility libraries for Prisma and enable pnpm
+# Install compatibility libraries for Prisma and ensure pnpm is available
 RUN apk add --no-cache libc6-compat openssl && corepack enable && corepack prepare pnpm@10.32.1 --activate
 
 ENV NODE_ENV production
@@ -45,5 +45,6 @@ EXPOSE 3000
 
 ENV PORT 3000
 
+# Run using full path to pnpm to avoid ambiguities
 WORKDIR /app/apps/web
-CMD ["pnpm", "start"]
+CMD ["/usr/local/bin/pnpm", "start"]
